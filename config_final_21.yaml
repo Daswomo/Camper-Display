@@ -12,6 +12,10 @@ substitutions:
   entity_grauwasser_stand: "sensor.abwasser_tank_level"
   entity_batterie_stand: "sensor.wohnmobil_batterie_batterie"
 
+  # --- Tankgrößen in Litern (Skala der Rundinstrumente) ---
+  tank_frischwasser_liter: "200"
+  tank_grauwasser_liter: "100"
+
   # --- Truma Heizung: Status & Sensoren ---
   entity_truma_fehler: "binary_sensor.truma_heizung_hat_fehler"
   entity_truma_verbunden: "binary_sensor.truma_cp_plus_online"
@@ -362,7 +366,7 @@ lvgl:
             y: -20
             image_opa: 90%
 
-        # --- Frischwasser: Gauge mit Farbverlauf (Rot=leer, Grün=voll), 0-200L ---
+        # --- Frischwasser: Gauge mit Farbverlauf (Rot=leer, Grün=voll), Skala siehe tank_frischwasser_liter ---
         - meter:
             id: w_mt394t4512ra6
             bg_color: "0x1A1A1A"
@@ -371,7 +375,7 @@ lvgl:
               -
                 angle_range: 270
                 range_from: 0
-                range_to: 200
+                range_to: ${tank_frischwasser_liter}
                 rotation: 135
                 ticks:
                   color: "0x666666"
@@ -387,7 +391,7 @@ lvgl:
                 indicators:
                   - tick_style:
                       start_value: 0
-                      end_value: 200
+                      end_value: ${tank_frischwasser_liter}
                       color_start: "0xFF0000"
                       color_end: "0x00FF00"
                   - line:
@@ -400,7 +404,7 @@ lvgl:
             x: 50
             y: 240
 
-        # --- Grauwasser: Gauge mit Farbverlauf (Grün=leer, Rot=voll), 0-100L ---
+        # --- Grauwasser: Gauge mit Farbverlauf (Grün=leer, Rot=voll), Skala siehe tank_grauwasser_liter ---
         - meter:
             id: w_mt3bc6mnpar0u
             bg_color: "0x1A1A1A"
@@ -409,7 +413,7 @@ lvgl:
               -
                 angle_range: 270
                 range_from: 0
-                range_to: 100
+                range_to: ${tank_grauwasser_liter}
                 rotation: 135
                 ticks:
                   color: "0x666666"
@@ -425,7 +429,7 @@ lvgl:
                 indicators:
                   - tick_style:
                       start_value: 0
-                      end_value: 100
+                      end_value: ${tank_grauwasser_liter}
                       color_start: "0x00FF00"
                       color_end: "0xFF0000"
                   - line:
