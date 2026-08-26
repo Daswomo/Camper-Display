@@ -53,13 +53,18 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
 
 ## Tank-/Batterie-Skalen anpassen
 
-Die Wertebereiche der Rundinstrumente sind fest im Layout hinterlegt (`range_from`/`range_to` in den jeweiligen `meter:`-Blöcken) und müssen bei abweichenden Tankgrößen manuell angepasst werden:
+Die Wertebereiche der Rundinstrumente lassen sich direkt im `substitutions:`-Block anpassen – kein Suchen im Layout-Code nötig:
 
-| Anzeige | Standard-Skala |
-|---|---|
-| Frischwasser | 0–200 Liter |
-| Grauwasser | 0–100 Liter |
-| Batterie | 0–100 % |
+```yaml
+tank_frischwasser_liter: "200"
+tank_grauwasser_liter: "100"
+```
+
+| Anzeige | Substitution | Standardwert |
+|---|---|---|
+| Frischwasser | `tank_frischwasser_liter` | 200 Liter |
+| Grauwasser | `tank_grauwasser_liter` | 100 Liter |
+| Batterie | – (fest 0–100 %) | 100 % |
 
 ## Mitwirken
 
