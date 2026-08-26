@@ -1,0 +1,1664 @@
+substitutions:
+  name: "waveshare-7inch-display"
+  friendly_name: "Camper Display"
+
+  # ==========================================================================
+  # HOME ASSISTANT ENTITY-IDs
+  # Hier die eigenen Entity-IDs eintragen, ohne den Rest der Datei anzufassen.
+  # ==========================================================================
+
+  # --- Tanks & Batterie ---
+  entity_frischwasser_stand: "sensor.bluelevel_ssbtee24_fullstand_3"
+  entity_grauwasser_stand: "sensor.abwasser_tank_level"
+  entity_batterie_stand: "sensor.wohnmobil_batterie_batterie"
+
+  # --- Truma Heizung: Status & Sensoren ---
+  entity_truma_fehler: "binary_sensor.truma_heizung_hat_fehler"
+  entity_truma_verbunden: "binary_sensor.truma_cp_plus_online"
+  entity_truma_raumtemperatur_aktuell: "sensor.truma_aktuelle_raumtemperatur"
+  entity_truma_wassertemperatur_aktuell: "sensor.truma_aktuelle_wassertemperatur"
+  entity_truma_raumtemperatur_soll_sensor: "sensor.truma_target_room_temperature"
+
+  # --- Truma Heizung: Steuerung ---
+  entity_truma_raumheizung_schalter: "switch.activate_room_heater"
+  entity_truma_boiler_schalter: "switch.activate_water_heater"
+  entity_truma_raumtemperatur_soll: "number.target_room_temperature"
+  entity_truma_wassertemperatur_soll: "number.target_water_temperature"
+
+  # --- Neigungssensoren (Wasserwaage) ---
+  entity_neigung_laengs: "sensor.bluelevel_ssbtee24_langsneigung_2"
+  entity_neigung_seitlich: "sensor.bluelevel_ssbtee24_seitenneigung_2"
+
+  # --- Heizung Hinten (230V) ---
+  entity_heizung_hinten: "climate.hinten_230v"
+
+  # --- Licht ---
+  entity_licht_decke: "light.led_decke_led_decke"
+  entity_licht_bett_gross: "light.dusche_bett_gross"
+  entity_licht_dusche: "light.dusche_dusche"
+  entity_licht_markise: "light.led_makise_led_markise"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: "2025.8.0"
+  platformio_options:
+    board_upload.maximum_ram_size: 524288
+
+esp32:
+  variant: esp32s3
+  flash_size: 8MB
+  cpu_frequency: 240MHz
+  framework:
+    type: esp-idf
+    advanced:
+      enable_idf_experimental_features: true
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# --- Netwerk & basis ---
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  ap:
+    ssid: "${friendly_name} Fallback"
+
+captive_portal:
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+
+ch422g:
+  - id: ch422g_hub
+
+touchscreen:
+  platform: gt911
+  id: my_touchscreen
+  i2c_id: bus_a
+  interrupt_pin: GPIO4
+  reset_pin:
+    ch422g: ch422g_hub
+    number: 1
+    mode: OUTPUT
+  transform:
+    swap_xy: false
+    mirror_x: false
+    mirror_y: false
+  on_release:
+    - if:
+        condition: lvgl.is_paused
+        then:
+          - lvgl.resume:
+          - lvgl.widget.redraw:
+          - switch.turn_on: lcdbacklight
+
+display:
+  - platform: mipi_rgb
+    model: ESP32-S3-TOUCH-LCD-7-800X480
+    id: my_display
+    rotation: 0
+    update_interval: 1s
+    auto_clear_enabled: false
+    color_order: RGB
+    pclk_frequency: 16MHZ
+    dimensions:
+      width: 800
+      height: 480
+    reset_pin:
+      ch422g: ch422g_hub
+      number: 3
+    de_pin:
+      number: GPIO5
+    hsync_pin:
+      number: GPIO46
+      ignore_strapping_warning: true
+    vsync_pin:
+      number: GPIO3
+      ignore_strapping_warning: true
+    pclk_pin: GPIO7
+    pclk_inverted: true
+    hsync_back_porch: 8
+    hsync_front_porch: 8
+    hsync_pulse_width: 4
+    vsync_back_porch: 8
+    vsync_front_porch: 8
+    vsync_pulse_width: 4
+    data_pins:
+      red: [1, 2, 42, 41, 40]
+      blue: [14, 38, 18, 17, 10]
+      green: [39, 0, 45, 48, 47, 21]
+
+switch:
+  - platform: gpio
+    id: lcdbacklight
+    name: lcdbacklight
+    pin:
+      ch422g: ch422g_hub
+      number: 2
+      mode:
+        output: true
+      inverted: false
+    restore_mode: ALWAYS_ON
+
+  # --- Truma Steuerung ---
+  - platform: homeassistant
+    id: truma_room_heater_active
+    entity_id: ${entity_truma_raumheizung_schalter}
+    internal: true
+
+  - platform: homeassistant
+    id: truma_water_heater_active
+    entity_id: ${entity_truma_boiler_schalter}
+    internal: true
+
+light:
+  - platform: monochromatic
+    name: "Display Backlight"
+    output: fake_backlight_output
+    id: display_backlight
+    default_transition_length: 1s
+    gamma_correct: 2.8
+
+output:
+  - platform: template
+    id: fake_backlight_output
+    type: float
+    write_action:
+      - lambda: |-
+          ESP_LOGD("fake_light", "Fake brightness level: %.2f", state);
+
+i2c:
+  - id: bus_a
+    sda: GPIO8
+    scl: GPIO9
+    scan: true
+
+globals:
+  - id: display_page
+    type: int
+    restore_value: true
+    initial_value: '0'
+  - id: page_refresh_default_s
+    type: int
+    restore_value: true
+    initial_value: '600'
+  - id: page_refresh_current_s
+    type: int
+    restore_value: false
+    initial_value: '60'
+  - id: initial_sensor_sync_pending
+    type: bool
+    restore_value: false
+    initial_value: 'true'
+  - id: last_page_switch_time
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: level_tilt_x
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: level_tilt_y
+    type: float
+    restore_value: false
+    initial_value: '0'
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+font:
+  - file:
+      type: gfonts
+      family: "Roboto"
+      weight: 400
+      italic: false
+    id: font_roboto_400_20
+    size: 20
+    glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
+    ignore_missing_glyphs: true
+  - file:
+      type: gfonts
+      family: "Roboto"
+      weight: 400
+      italic: false
+    id: font_roboto_400_14
+    size: 14
+    glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
+    ignore_missing_glyphs: true
+  - file:
+      type: gfonts
+      family: "Roboto"
+      weight: 700
+      italic: false
+    id: font_roboto_700_44
+    size: 44
+    glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
+    ignore_missing_glyphs: true
+
+# --- Hymer-Logo als Hintergrundbild (Startseite) ---
+image:
+  - file: "images/hymer_logo.png"
+    id: hymer_logo
+    type: RGB565
+    transparency: alpha_channel
+
+script:
+  - id: update_level_bubble
+    then:
+      - lvgl.widget.update:
+          id: w_level_bubble
+          x: !lambda |-
+            float scale = 12.0f;
+            float ox = id(level_tilt_x) * scale;
+            float oy = id(level_tilt_y) * scale;
+            float mag = sqrtf(ox * ox + oy * oy);
+            float max_r = 155.0f;
+            if (mag > max_r && mag > 0) {
+              ox = ox * max_r / mag;
+            }
+            return (int) ox;
+          y: !lambda |-
+            float scale = 12.0f;
+            float ox = id(level_tilt_x) * scale;
+            float oy = id(level_tilt_y) * scale;
+            float mag = sqrtf(ox * ox + oy * oy);
+            float max_r = 155.0f;
+            if (mag > max_r && mag > 0) {
+              oy = oy * max_r / mag;
+            }
+            return (int) oy;
+
+  - id: change_page_to
+    parameters:
+      target_page: int
+    then:
+      - lambda: |-
+          int pages_count = 2;
+          int target = target_page;
+          while (target < 0) target += pages_count;
+          target %= pages_count;
+
+          uint32_t now = millis();
+          if (now - id(last_page_switch_time) < 2000) {
+            ESP_LOGD("display", "Page change ignored (debounce), last switch was %u ms ago", (unsigned int) (now - id(last_page_switch_time)));
+            return;
+          }
+
+          if (id(display_page) != target) {
+            id(last_page_switch_time) = now;
+            id(display_page) = target;
+            ESP_LOGI("display", "Switched to page %d", target);
+          }
+      - if:
+          condition:
+            lambda: 'return id(display_page) == 0;'
+          then:
+            - lvgl.page.show: page_0
+      - if:
+          condition:
+            lambda: 'return id(display_page) == 1;'
+          then:
+            - lvgl.page.show: page_1
+
+  - id: manage_run_and_sleep
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return !(id(ha_time).now().is_valid() && api_is_connected());'
+          then:
+            - logger.log: "Waiting for sync..."
+            - wait_until:
+                condition:
+                  lambda: 'return id(ha_time).now().is_valid() && api_is_connected();'
+                timeout: 120s
+      - if:
+          condition:
+            lambda: 'return id(initial_sensor_sync_pending);'
+          then:
+            - logger.log: "Waiting 5s for initial sensor updates..."
+            - delay: 5s
+            - lambda: 'id(initial_sensor_sync_pending) = false;'
+      - lambda: |-
+          int p = id(display_page);
+          int interval = id(page_refresh_default_s);
+          id(page_refresh_current_s) = interval;
+      - delay: !lambda 'return id(page_refresh_current_s) * 1000;'
+      - script.execute: manage_run_and_sleep
+# ============================================================================
+# LVGL Configuration
+# ============================================================================
+
+lvgl:
+  id: my_lvgl
+  log_level: WARN
+  bg_color: "0x000000"
+  displays:
+    - my_display
+  touchscreens:
+    - touchscreen_id: my_touchscreen
+  on_idle:
+    timeout: 5min
+    then:
+      - switch.turn_off: lcdbacklight
+      - lvgl.pause:
+  pages:
+    - id: page_0
+      widgets:
+        # --- Hymer-Logo als Hintergrund ---
+        - image:
+            id: w_hymer_bg
+            src: hymer_logo
+            align: CENTER
+            x: 0
+            y: -20
+            image_opa: 90%
+
+        # --- Frischwasser: Gauge mit Farbverlauf (Rot=leer, Grün=voll), 0-200L ---
+        - meter:
+            id: w_mt394t4512ra6
+            bg_color: "0x1A1A1A"
+            height: 180
+            scales:
+              -
+                angle_range: 270
+                range_from: 0
+                range_to: 200
+                rotation: 135
+                ticks:
+                  color: "0x666666"
+                  count: 11
+                  length: 8
+                  major:
+                    color: "0xCCCCCC"
+                    label_gap: 10
+                    length: 12
+                    stride: 2
+                    width: 3
+                  width: 2
+                indicators:
+                  - tick_style:
+                      start_value: 0
+                      end_value: 200
+                      color_start: "0xFF0000"
+                      color_end: "0x00FF00"
+                  - line:
+                      id: w_mt394t4512ra6_ind
+                      color: "0xFFFFFF"
+                      r_mod: -10
+                      value: 0
+                      width: 4
+            width: 180
+            x: 50
+            y: 240
+
+        # --- Grauwasser: Gauge mit Farbverlauf (Grün=leer, Rot=voll), 0-100L ---
+        - meter:
+            id: w_mt3bc6mnpar0u
+            bg_color: "0x1A1A1A"
+            height: 180
+            scales:
+              -
+                angle_range: 270
+                range_from: 0
+                range_to: 100
+                rotation: 135
+                ticks:
+                  color: "0x666666"
+                  count: 11
+                  length: 8
+                  major:
+                    color: "0xCCCCCC"
+                    label_gap: 10
+                    length: 12
+                    stride: 2
+                    width: 3
+                  width: 2
+                indicators:
+                  - tick_style:
+                      start_value: 0
+                      end_value: 100
+                      color_start: "0x00FF00"
+                      color_end: "0xFF0000"
+                  - line:
+                      id: w_mt3bc6mnpar0u_ind
+                      color: "0xFFFFFF"
+                      r_mod: -10
+                      value: 0
+                      width: 4
+            width: 180
+            x: 310
+            y: 240
+
+        # --- Batterie: Gauge mit Farbverlauf (Rot=leer, Grün=voll) ---
+        - meter:
+            id: w_mt3cgfftkoy3z
+            bg_color: "0x1A1A1A"
+            height: 180
+            scales:
+              -
+                angle_range: 270
+                range_from: 0
+                range_to: 100
+                rotation: 135
+                ticks:
+                  color: "0x666666"
+                  count: 11
+                  length: 8
+                  major:
+                    color: "0xCCCCCC"
+                    label_gap: 10
+                    length: 12
+                    stride: 2
+                    width: 3
+                  width: 2
+                indicators:
+                  - tick_style:
+                      start_value: 0
+                      end_value: 100
+                      color_start: "0xFF0000"
+                      color_end: "0x00FF00"
+                  - line:
+                      id: w_mt3cgfftkoy3z_ind
+                      color: "0xFFFFFF"
+                      r_mod: -10
+                      value: 0
+                      width: 4
+            width: 180
+            x: 570
+            y: 240
+
+        - label:
+            id: w_mt3d2ajrwdrdo
+            border_side: none
+            height: 70
+            radius: 0
+            text: !lambda |-
+              return str_sprintf("Batterie\n%.0f%%", id(sensor_wohnmobil_batterie_batterie).state).c_str();
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 180
+            x: 570
+            y: 425
+
+        # --- Wechsel zur Truma-Seite ---
+        - button:
+            id: w_goto_truma
+            height: 40
+            width: 120
+            x: 340
+            y: 20
+            on_click:
+              - lvgl.page.show: page_1
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Heizung"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        # --- Wechsel zur Position-Seite ---
+        - button:
+            id: w_goto_level
+            height: 40
+            width: 120
+            x: 470
+            y: 20
+            on_click:
+              - lvgl.page.show: page_2
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Position"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        # --- Wechsel zur Heizung-Hinten-Seite ---
+        - button:
+            id: w_goto_heizung_hinten
+            height: 40
+            width: 120
+            x: 600
+            y: 20
+            on_click:
+              - lvgl.page.show: page_3
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Hinten"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        # --- Wechsel zur Licht-Seite ---
+        - button:
+            id: w_goto_licht
+            height: 40
+            width: 120
+            x: 340
+            y: 70
+            on_click:
+              - lvgl.page.show: page_4
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Licht"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - label:
+            id: w_mt47tocv9km4h
+            border_side: none
+            height: 70
+            radius: 0
+            text: !lambda |-
+              return str_sprintf("Frischwasser\n%.0f L", id(sensor_bluelevel_ssbtee24_fullstand_3).state).c_str();
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 180
+            x: 50
+            y: 425
+        - label:
+            id: w_mt47uiuinf13s
+            border_side: none
+            height: 70
+            radius: 0
+            text: !lambda |-
+              return str_sprintf("Grauwasser\n%.0f L", id(sensor_abwasser_tank_level).state).c_str();
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 180
+            x: 310
+            y: 425
+
+    # ============================================================
+    # Truma Heizungs-Seite
+    # ============================================================
+    - id: page_1
+      widgets:
+        - label:
+            id: w_truma_error_label
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Kein Fehler"
+            text_align: right
+            text_color: "0x00FF00"
+            text_font: font_roboto_400_14
+            width: 150
+            x: 630
+            y: 15
+
+        # ==========================================================
+        # Großes Thermostat: Raumheizung (HA-Klimakarte-Stil)
+        # ==========================================================
+        - arc:
+            id: w_room_target_arc
+            x: 300
+            y: 30
+            width: 200
+            height: 200
+            min_value: 5
+            max_value: 30
+            start_angle: 135
+            end_angle: 45
+            arc_width: 16
+            arc_rounded: true
+            adjustable: true
+            change_rate: 360
+            indicator:
+              arc_color: "0xFF6B35"
+            value: !lambda return (int) id(truma_target_room_temp_current).state;
+            on_value:
+              - lvgl.label.update:
+                  id: w_room_target_arc_value
+                  text:
+                    format: "%.0f°"
+                    args: ["x"]
+            on_release:
+              - homeassistant.action:
+                  action: number.set_value
+                  data:
+                    entity_id: ${entity_truma_raumtemperatur_soll}
+                  variables:
+                    new_temp: !lambda 'return (float) x;'
+                  data_template:
+                    value: "{{ new_temp }}"
+            widgets:
+              - label:
+                  id: w_room_target_arc_value
+                  align: center
+                  text: "20°"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_700_44
+
+        - label:
+            id: w_room_temp_value
+            border_side: none
+            height: 24
+            radius: 0
+            text: "Aktuell: -- °C"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 300
+            y: 232
+
+        # --- Raumheizung an/aus ---
+        - button:
+            id: w_room_heater_toggle
+            checkable: true
+            height: 44
+            width: 200
+            x: 300
+            y: 265
+            on_click:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${entity_truma_raumheizung_schalter}
+            state:
+              checked: !lambda return id(truma_room_heater_active).state;
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Raumheizung"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        # ==========================================================
+        # Wasser-Sektion
+        # ==========================================================
+        - label:
+            id: w_water_temp_label
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Wasser:"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_20
+            width: 100
+            x: 20
+            y: 340
+        - label:
+            id: w_water_temp_value
+            border_side: none
+            height: 30
+            radius: 0
+            text: "--"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 100
+            x: 100
+            y: 340
+
+        # --- Wasserheizung an/aus ---
+        - button:
+            id: w_water_heater_toggle
+            checkable: true
+            height: 40
+            width: 150
+            x: 20
+            y: 380
+            on_click:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${entity_truma_boiler_schalter}
+            state:
+              checked: !lambda return id(truma_water_heater_active).state;
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Boiler"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        # --- Wasser-Solltemperatur: eine Taste je Stufe ---
+        - label:
+            id: w_water_target_label
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Soll:"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_20
+            width: 100
+            x: 220
+            y: 380
+
+        - button:
+            id: w_water_target_off
+            checkable: true
+            height: 40
+            width: 60
+            x: 260
+            y: 380
+            on_click:
+              - homeassistant.action:
+                  action: number.set_value
+                  data:
+                    entity_id: ${entity_truma_wassertemperatur_soll}
+                    value: "0"
+            state:
+              checked: !lambda return id(truma_target_water_temp_current).state == 0;
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Aus"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - button:
+            id: w_water_target_40
+            checkable: true
+            height: 40
+            width: 60
+            x: 328
+            y: 380
+            on_click:
+              - homeassistant.action:
+                  action: number.set_value
+                  data:
+                    entity_id: ${entity_truma_wassertemperatur_soll}
+                    value: "40"
+            state:
+              checked: !lambda return id(truma_target_water_temp_current).state == 40;
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "40°"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - button:
+            id: w_water_target_60
+            checkable: true
+            height: 40
+            width: 60
+            x: 396
+            y: 380
+            on_click:
+              - homeassistant.action:
+                  action: number.set_value
+                  data:
+                    entity_id: ${entity_truma_wassertemperatur_soll}
+                    value: "60"
+            state:
+              checked: !lambda return id(truma_target_water_temp_current).state == 60;
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "60°"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - button:
+            id: w_water_target_80
+            checkable: true
+            height: 40
+            width: 60
+            x: 464
+            y: 380
+            on_click:
+              - homeassistant.action:
+                  action: number.set_value
+                  data:
+                    entity_id: ${entity_truma_wassertemperatur_soll}
+                    value: "80"
+            state:
+              checked: !lambda return id(truma_target_water_temp_current).state == 80;
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "80°"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        # --- Zurück zur Startseite ---
+        - button:
+            id: w_back_to_main
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lvgl.page.show: page_0
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Zurück"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+    # ============================================================
+    # Position-Seite: Wasserwaage (Längs-/Seitenneigung)
+    # ============================================================
+    - id: page_2
+      widgets:
+        - label:
+            id: w_level_title
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Position"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 200
+            x: 20
+            y: 15
+
+        # --- Äußerer Bezel + grüne Kugel-Füllung (Farbverlauf) ---
+        - obj:
+            id: w_level_ring_outer
+            align: CENTER
+            x: 0
+            y: 10
+            width: 380
+            height: 380
+            radius: 190
+            bg_color: "0x8BC34A"
+            bg_grad_color: "0x33691E"
+            bg_grad_dir: VER
+            border_width: 18
+            border_color: "0xDDDDDD"
+
+        # --- Fadenkreuz: horizontal ---
+        - obj:
+            id: w_level_cross_h
+            align: CENTER
+            x: 0
+            y: 10
+            width: 340
+            height: 2
+            bg_color: "0xDDDDDD"
+            border_width: 0
+            radius: 0
+
+        # --- Fadenkreuz: vertikal ---
+        - obj:
+            id: w_level_cross_v
+            align: CENTER
+            x: 0
+            y: 10
+            width: 2
+            height: 340
+            bg_color: "0xDDDDDD"
+            border_width: 0
+            radius: 0
+
+        # --- Ziel-Ring in der Mitte ---
+        - obj:
+            id: w_level_center_dot
+            align: CENTER
+            x: 0
+            y: 10
+            width: 70
+            height: 70
+            radius: 35
+            bg_opa: TRANSP
+            border_width: 3
+            border_color: "0xDDDDDD"
+
+        # --- Die glänzende Blase ---
+        - obj:
+            id: w_level_bubble
+            align: CENTER
+            x: 0
+            y: 10
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: "0x9CCC65"
+            bg_grad_color: "0x33691E"
+            bg_grad_dir: VER
+            border_width: 2
+            border_color: "0xFFFFFF"
+            widgets:
+              - obj:
+                  id: w_level_bubble_highlight
+                  x: 10
+                  y: 8
+                  width: 20
+                  height: 14
+                  radius: 10
+                  bg_color: "0xFFFFFF"
+                  bg_opa: 60%
+                  border_width: 0
+
+        # --- Zurück zur Startseite ---
+        - button:
+            id: w_level_back
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lvgl.page.show: page_0
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Zurück"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+    # ============================================================
+    # Heizung Hinten (230V) - Thermostat-Seite
+    # ============================================================
+    - id: page_3
+      widgets:
+        - label:
+            id: w_hh_title
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Heizung Hinten"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 200
+            x: 300
+            y: 15
+
+        - label:
+            id: w_hh_status_label
+            border_side: none
+            height: 20
+            radius: 0
+            text: ""
+            text_align: right
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 150
+            x: 630
+            y: 15
+
+        # --- Großes Thermostat ---
+        - arc:
+            id: w_hh_target_arc
+            x: 300
+            y: 60
+            width: 200
+            height: 200
+            min_value: 5
+            max_value: 35
+            start_angle: 135
+            end_angle: 45
+            arc_width: 16
+            arc_rounded: true
+            adjustable: true
+            change_rate: 360
+            indicator:
+              arc_color: "0xFF6B35"
+            value: !lambda return (int) id(heizung_hinten_target_temp).state;
+            on_value:
+              - lvgl.label.update:
+                  id: w_hh_target_arc_value
+                  text:
+                    format: "%.0f°"
+                    args: ["x"]
+            on_release:
+              - homeassistant.action:
+                  action: climate.set_temperature
+                  data:
+                    entity_id: ${entity_heizung_hinten}
+                  variables:
+                    new_temp: !lambda 'return (float) x;'
+                  data_template:
+                    temperature: "{{ new_temp }}"
+            widgets:
+              - label:
+                  id: w_hh_target_arc_value
+                  align: center
+                  text: "16°"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_700_44
+
+        - label:
+            id: w_hh_current_temp
+            border_side: none
+            height: 24
+            radius: 0
+            text: "Aktuell: -- °C"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 300
+            y: 262
+
+        # --- Ein/Aus (heat/off) ---
+        - button:
+            id: w_hh_toggle
+            checkable: true
+            height: 44
+            width: 200
+            x: 300
+            y: 295
+            on_click:
+              - lambda: |-
+                  ESP_LOGD("heizung_hinten", "Toggle-Klick, aktueller Modus laut Sensor: '%s'", id(heizung_hinten_mode).state.c_str());
+              - if:
+                  condition:
+                    lambda: 'return id(heizung_hinten_mode).state == "heat";'
+                  then:
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: ${entity_heizung_hinten}
+                          hvac_mode: "off"
+                  else:
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: ${entity_heizung_hinten}
+                          hvac_mode: "heat"
+            state:
+              checked: !lambda return id(heizung_hinten_mode).state == "heat";
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Heizung"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        # --- Zurück zur Startseite ---
+        - button:
+            id: w_hh_back
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lvgl.page.show: page_0
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Zurück"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+    # ============================================================
+    # Licht-Seite: Decke (RGBW) + Bett Groß (dimmbar)
+    # ============================================================
+    - id: page_4
+      widgets:
+        - label:
+            id: w_licht_title
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Licht"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 200
+            x: 300
+            y: 15
+
+        # ==========================================================
+        # Decke (nur Ein/Aus + Helligkeit)
+        # ==========================================================
+        - label:
+            id: w_licht_decke_label
+            border_side: none
+            height: 26
+            radius: 0
+            text: "Decke"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_20
+            width: 150
+            x: 20
+            y: 60
+
+        - button:
+            id: w_licht_decke_toggle
+            checkable: true
+            height: 40
+            width: 150
+            x: 20
+            y: 90
+            on_click:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${entity_licht_decke}
+            state:
+              checked: !lambda return id(licht_decke_state).state == "on";
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Ein/Aus"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - label:
+            id: w_licht_decke_helligkeit_label
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Helligkeit"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 150
+            x: 20
+            y: 145
+
+        - slider:
+            id: w_licht_decke_slider
+            height: 20
+            width: 300
+            x: 20
+            y: 170
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_decke}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        # ==========================================================
+        # Dusche (nur dimmbar)
+        # ==========================================================
+        - label:
+            id: w_licht_dusche_label
+            border_side: none
+            height: 26
+            radius: 0
+            text: "Dusche"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_20
+            width: 150
+            x: 20
+            y: 210
+
+        - button:
+            id: w_licht_dusche_toggle
+            checkable: true
+            height: 40
+            width: 150
+            x: 20
+            y: 240
+            on_click:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${entity_licht_dusche}
+            state:
+              checked: !lambda return id(licht_dusche_state).state == "on";
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Ein/Aus"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - label:
+            id: w_licht_dusche_helligkeit_label
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Helligkeit"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 150
+            x: 20
+            y: 295
+
+        - slider:
+            id: w_licht_dusche_slider
+            height: 20
+            width: 300
+            x: 20
+            y: 320
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_dusche}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        # ==========================================================
+        # Bett Groß (nur dimmbar)
+        # ==========================================================
+        - label:
+            id: w_licht_bett_label
+            border_side: none
+            height: 26
+            radius: 0
+            text: "Bett Groß"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_20
+            width: 150
+            x: 450
+            y: 60
+
+        - button:
+            id: w_licht_bett_toggle
+            checkable: true
+            height: 40
+            width: 150
+            x: 450
+            y: 90
+            on_click:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${entity_licht_bett_gross}
+            state:
+              checked: !lambda return id(licht_bett_state).state == "on";
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Ein/Aus"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - label:
+            id: w_licht_bett_helligkeit_label
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Helligkeit"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 150
+            x: 450
+            y: 145
+
+        - slider:
+            id: w_licht_bett_slider
+            height: 20
+            width: 300
+            x: 450
+            y: 170
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_bett_gross}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        # ==========================================================
+        # Markise (nur dimmbar)
+        # ==========================================================
+        - label:
+            id: w_licht_markise_label
+            border_side: none
+            height: 26
+            radius: 0
+            text: "Markise"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_20
+            width: 150
+            x: 450
+            y: 225
+
+        - button:
+            id: w_licht_markise_toggle
+            checkable: true
+            height: 40
+            width: 150
+            x: 450
+            y: 255
+            on_click:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${entity_licht_markise}
+            state:
+              checked: !lambda return id(licht_markise_state).state == "on";
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Ein/Aus"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - label:
+            id: w_licht_markise_helligkeit_label
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Helligkeit"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 150
+            x: 450
+            y: 310
+
+        - slider:
+            id: w_licht_markise_slider
+            height: 20
+            width: 300
+            x: 450
+            y: 335
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_markise}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        # --- Zurück zur Startseite ---
+        - button:
+            id: w_licht_back
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lvgl.page.show: page_0
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Zurück"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+binary_sensor:
+  # --- Truma Status ---
+  - platform: homeassistant
+    id: truma_heater_error
+    entity_id: ${entity_truma_fehler}
+    internal: true
+    on_state:
+      - if:
+          condition:
+            lambda: return x;
+          then:
+            - lvgl.label.update:
+                id: w_truma_error_label
+                text: "FEHLER!"
+                text_color: "0xFF0000"
+          else:
+            - lvgl.label.update:
+                id: w_truma_error_label
+                text: "Kein Fehler"
+                text_color: "0x00FF00"
+
+  - platform: homeassistant
+    id: truma_cp_plus_online
+    entity_id: ${entity_truma_verbunden}
+    internal: true
+
+sensor:
+  - platform: homeassistant
+    id: sensor_bluelevel_ssbtee24_fullstand_3
+    entity_id: ${entity_frischwasser_stand}
+    on_value:
+      then:
+        - lvgl.indicator.update:
+            id: w_mt394t4512ra6_ind
+            value: !lambda "return x;"
+        - lvgl.widget.refresh: w_mt47tocv9km4h
+    internal: true
+  - platform: homeassistant
+    id: sensor_abwasser_tank_level
+    entity_id: ${entity_grauwasser_stand}
+    on_value:
+      then:
+        - lvgl.indicator.update:
+            id: w_mt3bc6mnpar0u_ind
+            value: !lambda "return x;"
+        - lvgl.widget.refresh: w_mt47uiuinf13s
+    internal: true
+  - platform: homeassistant
+    id: sensor_wohnmobil_batterie_batterie
+    entity_id: ${entity_batterie_stand}
+    on_value:
+      then:
+        - lvgl.indicator.update:
+                  id: w_mt3cgfftkoy3z_ind
+                  value: !lambda "return x;"
+        - lvgl.widget.refresh: w_mt3d2ajrwdrdo
+    internal: true
+
+  # --- Truma Temperaturen ---
+  - platform: homeassistant
+    id: truma_current_room_temp
+    entity_id: ${entity_truma_raumtemperatur_aktuell}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: w_room_temp_value
+          text:
+            format: "Aktuell: %.1f °C"
+            args: ["x"]
+
+  - platform: homeassistant
+    id: truma_current_water_temp
+    entity_id: ${entity_truma_wassertemperatur_aktuell}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: w_water_temp_value
+          text:
+            format: "%.1f °C"
+            args: ["x"]
+
+  - platform: homeassistant
+    id: truma_target_room_temp
+    entity_id: ${entity_truma_raumtemperatur_soll_sensor}
+    internal: true
+
+  # --- Truma Solltemperaturen: Sync HA -> Display ---
+  - platform: homeassistant
+    id: truma_target_room_temp_current
+    entity_id: ${entity_truma_raumtemperatur_soll}
+    internal: true
+    on_value:
+      - lvgl.arc.update:
+          id: w_room_target_arc
+          value: !lambda 'return (int) x;'
+      - lvgl.label.update:
+          id: w_room_target_arc_value
+          text:
+            format: "%.0f°"
+            args: ["x"]
+
+  - platform: homeassistant
+    id: truma_target_water_temp_current
+    entity_id: ${entity_truma_wassertemperatur_soll}
+    internal: true
+    on_value:
+      - lvgl.widget.refresh: w_water_target_off
+      - lvgl.widget.refresh: w_water_target_40
+      - lvgl.widget.refresh: w_water_target_60
+      - lvgl.widget.refresh: w_water_target_80
+
+  # --- Position / Wasserwaage ---
+  - platform: homeassistant
+    id: sensor_langsneigung
+    entity_id: ${entity_neigung_laengs}
+    internal: true
+    on_value:
+      then:
+        - lambda: 'id(level_tilt_x) = x;'
+        - script.execute: update_level_bubble
+
+  - platform: homeassistant
+    id: sensor_seitenneigung
+    entity_id: ${entity_neigung_seitlich}
+    internal: true
+    on_value:
+      then:
+        - lambda: 'id(level_tilt_y) = x;'
+        - script.execute: update_level_bubble
+
+  # --- Heizung Hinten (230V) ---
+  - platform: homeassistant
+    id: heizung_hinten_current_temp
+    entity_id: ${entity_heizung_hinten}
+    attribute: current_temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: w_hh_current_temp
+          text:
+            format: "Aktuell: %.1f °C"
+            args: ["x"]
+
+  - platform: homeassistant
+    id: heizung_hinten_target_temp
+    entity_id: ${entity_heizung_hinten}
+    attribute: temperature
+    internal: true
+    on_value:
+      - lvgl.arc.update:
+          id: w_hh_target_arc
+          value: !lambda 'return (int) x;'
+      - lvgl.label.update:
+          id: w_hh_target_arc_value
+          text:
+            format: "%.0f°"
+            args: ["x"]
+
+  # --- Licht Helligkeit ---
+  - platform: homeassistant
+    id: licht_decke_brightness
+    entity_id: ${entity_licht_decke}
+    attribute: brightness
+    internal: true
+    on_value:
+      - lvgl.slider.update:
+          id: w_licht_decke_slider
+          value: !lambda 'return (int) (x / 255.0 * 100.0);'
+
+  - platform: homeassistant
+    id: licht_bett_brightness
+    entity_id: ${entity_licht_bett_gross}
+    attribute: brightness
+    internal: true
+    on_value:
+      - lvgl.slider.update:
+          id: w_licht_bett_slider
+          value: !lambda 'return (int) (x / 255.0 * 100.0);'
+
+  - platform: homeassistant
+    id: licht_dusche_brightness
+    entity_id: ${entity_licht_dusche}
+    attribute: brightness
+    internal: true
+    on_value:
+      - lvgl.slider.update:
+          id: w_licht_dusche_slider
+          value: !lambda 'return (int) (x / 255.0 * 100.0);'
+
+  - platform: homeassistant
+    id: licht_markise_brightness
+    entity_id: ${entity_licht_markise}
+    attribute: brightness
+    internal: true
+    on_value:
+      - lvgl.slider.update:
+          id: w_licht_markise_slider
+          value: !lambda 'return (int) (x / 255.0 * 100.0);'
+
+text_sensor:
+  - platform: homeassistant
+    id: heizung_hinten_mode
+    entity_id: ${entity_heizung_hinten}
+    internal: true
+    on_value:
+      - lvgl.widget.refresh: w_hh_toggle
+
+  # --- Licht Status ---
+  - platform: homeassistant
+    id: licht_decke_state
+    entity_id: ${entity_licht_decke}
+    internal: true
+    on_value:
+      - lvgl.widget.refresh: w_licht_decke_toggle
+
+  - platform: homeassistant
+    id: licht_bett_state
+    entity_id: ${entity_licht_bett_gross}
+    internal: true
+    on_value:
+      - lvgl.widget.refresh: w_licht_bett_toggle
+
+  - platform: homeassistant
+    id: licht_dusche_state
+    entity_id: ${entity_licht_dusche}
+    internal: true
+    on_value:
+      - lvgl.widget.refresh: w_licht_dusche_toggle
+
+  - platform: homeassistant
+    id: licht_markise_state
+    entity_id: ${entity_licht_markise}
+    internal: true
+    on_value:
+      - lvgl.widget.refresh: w_licht_markise_toggle
+
+  - platform: homeassistant
+    id: heizung_hinten_action
+    entity_id: ${entity_heizung_hinten}
+    attribute: hvac_action
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: w_hh_status_label
+          text: !lambda 'return x;'
+
+  - platform: homeassistant
+    id: sensor_bluelevel_ssbtee24_fullstand_3_txt
+    entity_id: ${entity_frischwasser_stand}
+    internal: true
+  - platform: homeassistant
+    id: sensor_abwasser_tank_level_txt
+    entity_id: ${entity_grauwasser_stand}
+    internal: true
