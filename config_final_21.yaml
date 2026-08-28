@@ -490,15 +490,6 @@ lvgl:
   pages:
     - id: page_0
       widgets:
-        # --- Smart Womo HA Logo als Hintergrund ---
-        - image:
-            id: w_logo_bg
-            src: smart_womo_logo
-            align: CENTER
-            x: 0
-            y: -20
-            image_opa: 90%
-
         # --- Frischwasser: Gauge mit Farbverlauf (Rot=leer, Grün=voll), Skala siehe tank_frischwasser_liter ---
         - meter:
             id: w_mt394t4512ra6
@@ -627,10 +618,28 @@ lvgl:
             x: 570
             y: 425
 
+        # --- Wechsel zur Licht-Seite ---
+        - button:
+            id: w_goto_licht
+            height: 80
+            width: 120
+            x: 210
+            y: 20
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_4
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Licht"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
         # --- Wechsel zur Truma-Seite ---
         - button:
             id: w_goto_truma
-            height: 40
+            height: 80
             width: 120
             x: 340
             y: 20
@@ -648,7 +657,7 @@ lvgl:
         # --- Wechsel zur Position-Seite ---
         - button:
             id: w_goto_level
-            height: 40
+            height: 80
             width: 120
             x: 470
             y: 20
@@ -666,7 +675,7 @@ lvgl:
         # --- Wechsel zur Heizung-Hinten-Seite ---
         - button:
             id: w_goto_heizung_hinten
-            height: 40
+            height: 80
             width: 120
             x: 600
             y: 20
@@ -678,24 +687,6 @@ lvgl:
                 label:
                   align: center
                   text: "Hinten"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
-
-        # --- Wechsel zur Licht-Seite ---
-        - button:
-            id: w_goto_licht
-            height: 40
-            width: 120
-            x: 340
-            y: 70
-            on_click:
-              - lambda: 'id(display_page) = 4;'
-              - lvgl.page.show: page_4
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "Licht"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
