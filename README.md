@@ -10,6 +10,7 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
 
 **Startseite**
 - Frischwasser- und Grauwasser-Füllstand sowie Batterieladung als Rundinstrumente mit Farbverlauf (Grün/Rot je nach Füllstand-Logik)
+- Eigenes Logo als Hintergrundbild
 - Navigation zu allen weiteren Seiten
 
 **Truma-Heizung**
@@ -28,8 +29,12 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
 **Licht**
 - Ein/Aus- und Helligkeitssteuerung für vier Lampen
 
+**Bildschirmschoner**
+- Nach 5 Minuten Inaktivität wechselt das Display automatisch zu einer großen Logo-Ansicht (Backlight bleibt dauerhaft an)
+- Eine Berührung stellt automatisch die zuletzt aktive Seite wieder her
+
 **Allgemein**
-- 5-Minuten-Inaktivitäts-Timeout für das Backlight, Touch-Wakeup
+- Touch-Wakeup, seitenübergreifende Navigation
 - Alle Home-Assistant-Entity-IDs sowie Tankgrößen und Fahrzeugmaße zentral über `substitutions:` konfigurierbar – kein Durchsuchen der Datei nötig
 
 ## Hardware
@@ -51,7 +56,8 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
    wifi_ssid: "Dein-WLAN"
    wifi_password: "Dein-Passwort"
    ```
-3. Im Kopf der Datei den Abschnitt **`substitutions:`** an deine eigenen Home-Assistant-Entity-IDs anpassen – das ist der einzige Teil, den du normalerweise ändern musst. Enthält u. a.:
+3. Dein Logo als `images/smart_womo_logo.png` (transparenter Hintergrund empfohlen) im ESPHome-Verzeichnis ablegen, oder eigenes Bild verwenden und den Dateinamen im `image:`-Block anpassen
+4. Im Kopf der Datei den Abschnitt **`substitutions:`** an deine eigenen Home-Assistant-Entity-IDs anpassen – das ist der einzige Teil, den du normalerweise ändern musst. Enthält u. a.:
    - Tank- und Batterie-Sensoren
    - Truma-Heizung (Schalter, Sensoren, Zieltemperaturen)
    - Neigungssensoren für die Wasserwaage
@@ -59,13 +65,14 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
    - Zweite Heizzone (`climate`-Entity)
    - Lichter (vier Lampen)
    - Tankgrößen (Liter) und Fahrzeugmaße (Spurbreite/Radstand, für die Nivellierungs-Empfehlung)
-4. In ESPHome kompilieren und auf das Gerät flashen
+5. In ESPHome kompilieren und auf das Gerät flashen
 
 ## Bekannte Einschränkungen
 
 - **Kein ESPHome-Designer-Roundtrip**: Diese Datei enthält viel handgeschriebene LVGL-Logik (`on_click`, `on_value`, dynamische `!lambda`-Bindungen). Ein Export/Re-Import über den visuellen [ESPHome Designer](https://github.com/koosoli/ESPHomeDesigner) verwirft diese Anpassungen zuverlässig. Änderungen bitte direkt in der YAML vornehmen.
 - **Speicherbedarf beim Kompilieren**: Bei limitiertem RAM (z. B. Home Assistant auf einem Raspberry Pi) kann der Compile-Vorgang mit `Killed signal terminated program cc1plus` abbrechen. Abhilfe: im ESPHome-Add-on `compile_process_limit: 1` setzen, oder Swap-Speicher hinzufügen.
 - **Vorzeichen-Richtung der Nivellierungs-Empfehlung** ist eine Annahme und muss am eigenen Fahrzeug verifiziert werden (siehe Kommentare im Script `update_level_empfehlung`).
+- **Bilder aus Flash, nicht von SD-Karte**: Obwohl das Board einen Micro-SD-Slot besitzt, unterstützt ESPHome das direkte Laden von LVGL-Bildern von der SD-Karte aktuell nicht offiziell. Bilder werden zur Kompilierzeit in die Firmware eingebettet.
 - Getestet mit ESPHome ab Version 2025.8.0.
 
 ## Tank-/Fahrzeugmaße anpassen
