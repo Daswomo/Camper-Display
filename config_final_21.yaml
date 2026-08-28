@@ -1703,7 +1703,7 @@ lvgl:
       widgets:
         - image:
             id: w_screensaver_logo
-            src: smart_womo_logo
+            src: smart_womo_logo_2
             align: CENTER
             x: 0
             y: 0
