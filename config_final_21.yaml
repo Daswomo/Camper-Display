@@ -318,12 +318,19 @@ font:
     glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
     ignore_missing_glyphs: true
 
-# --- Smart Womo HA Logo als Hintergrundbild (Startseite) ---
+# --- Smart Womo HA Logo (Bildschirmschoner) ---
 image:
   - file: "images/smart_womo_logo.png"
     id: smart_womo_logo
-    type: RGB565
+    type: RGB
     transparency: alpha_channel
+    resize: 320x69
+
+  - file: "images/wheel_icon.png"
+    id: wheel_icon
+    type: RGB
+    transparency: alpha_channel
+    resize: 50x50
 
 script:
   - id: update_level_bubble
@@ -331,90 +338,106 @@ script:
       - lvgl.widget.update:
           id: w_level_bubble
           x: !lambda |-
-            float scale = 12.0f;
+            float scale = 8.0f;
             float ox = id(level_tilt_x) * scale;
             float oy = id(level_tilt_y) * scale;
             float mag = sqrtf(ox * ox + oy * oy);
-            float max_r = 155.0f;
+            float max_r = 106.0f;
             if (mag > max_r && mag > 0) {
               ox = ox * max_r / mag;
             }
             return (int) ox;
           y: !lambda |-
-            float scale = 12.0f;
+            float scale = 8.0f;
             float ox = id(level_tilt_x) * scale;
             float oy = id(level_tilt_y) * scale;
             float mag = sqrtf(ox * ox + oy * oy);
-            float max_r = 155.0f;
+            float max_r = 106.0f;
             if (mag > max_r && mag > 0) {
               oy = oy * max_r / mag;
             }
             return (int) oy;
 
-  - id: update_level_empfehlung
-    then:
-      - lvgl.label.update:
-          id: w_level_empfehlung
-          text: !lambda |-
-            float pitch_deg = id(level_tilt_x);   // Längsneigung (vorne/hinten)
-            float roll_deg = id(level_tilt_y);    // Seitenneigung (links/rechts)
-            float radstand = ${fahrzeug_radstand_cm};
-            float spurbreite = ${fahrzeug_spurbreite_cm};
-
-            float pitch_cm = (radstand / 2.0f) * tanf(pitch_deg * 3.14159265f / 180.0f);
-            float roll_cm = (spurbreite / 2.0f) * tanf(roll_deg * 3.14159265f / 180.0f);
-            float total_cm = fabsf(pitch_cm) + fabsf(roll_cm);
-
-            if (total_cm < 0.5f) {
-              return std::string("Fahrzeug steht eben");
-            }
-
-            // ANNAHME zur Vorzeichen-Richtung - ggf. nach Test umdrehen:
-            // pitch_deg > 0  => vorne tiefer
-            // roll_deg  > 0  => links tiefer
-            bool vorne_tiefer = pitch_deg > 0;
-            bool links_tiefer = roll_deg > 0;
-
-            std::string ecke;
-            if (vorne_tiefer && links_tiefer) ecke = "Vorne Links";
-            else if (vorne_tiefer && !links_tiefer) ecke = "Vorne Rechts";
-            else if (!vorne_tiefer && links_tiefer) ecke = "Hinten Links";
-            else ecke = "Hinten Rechts";
-
-            return str_sprintf("%s: %.1f cm unterlegen", ecke.c_str(), total_cm);
-
-  # --- Reifendruck: kombinierte Anzeige (Druck/Temp/Batterie) ---
+  # --- Reifendruck: kombinierte Anzeige (Druck/Temp/Batterie) + separates cm-Label ---
   - id: update_tire_vl
     then:
       - lvgl.label.update:
           id: w_reifen_vl
+          text:
+            format: "Vorne Links\n%.1f bar | %.0f°C | %.0f%%"
+            args: ["id(tire_vl_pressure)", "id(tire_vl_temp)", "id(tire_vl_battery)"]
+      - lvgl.label.update:
+          id: w_reifen_vl_cm
           text: !lambda |-
-            return str_sprintf("Vorne Links\n%.1f bar | %.0f°C | %.0f%%",
-              id(tire_vl_pressure), id(tire_vl_temp), id(tire_vl_battery));
+            float pitch = ${fahrzeug_radstand_cm} / 2.0f * tanf(id(level_tilt_x) * 3.14159265f / 180.0f);
+            float roll = ${fahrzeug_spurbreite_cm} / 2.0f * tanf(id(level_tilt_y) * 3.14159265f / 180.0f);
+            float h_vl = -pitch - roll;
+            float h_vr = -pitch + roll;
+            float h_hl = pitch - roll;
+            float h_hr = pitch + roll;
+            float max_h = fmaxf(fmaxf(h_vl, h_vr), fmaxf(h_hl, h_hr));
+            float lift = max_h - h_vl;
+            return str_sprintf("+%.1f cm", lift);
 
   - id: update_tire_vr
     then:
       - lvgl.label.update:
           id: w_reifen_vr
+          text:
+            format: "Vorne Rechts\n%.1f bar | %.0f°C | %.0f%%"
+            args: ["id(tire_vr_pressure)", "id(tire_vr_temp)", "id(tire_vr_battery)"]
+      - lvgl.label.update:
+          id: w_reifen_vr_cm
           text: !lambda |-
-            return str_sprintf("Vorne Rechts\n%.1f bar | %.0f°C | %.0f%%",
-              id(tire_vr_pressure), id(tire_vr_temp), id(tire_vr_battery));
+            float pitch = ${fahrzeug_radstand_cm} / 2.0f * tanf(id(level_tilt_x) * 3.14159265f / 180.0f);
+            float roll = ${fahrzeug_spurbreite_cm} / 2.0f * tanf(id(level_tilt_y) * 3.14159265f / 180.0f);
+            float h_vl = -pitch - roll;
+            float h_vr = -pitch + roll;
+            float h_hl = pitch - roll;
+            float h_hr = pitch + roll;
+            float max_h = fmaxf(fmaxf(h_vl, h_vr), fmaxf(h_hl, h_hr));
+            float lift = max_h - h_vr;
+            return str_sprintf("+%.1f cm", lift);
 
   - id: update_tire_hl
     then:
       - lvgl.label.update:
           id: w_reifen_hl
+          text:
+            format: "Hinten Links\n%.1f bar | %.0f°C | %.0f%%"
+            args: ["id(tire_hl_pressure)", "id(tire_hl_temp)", "id(tire_hl_battery)"]
+      - lvgl.label.update:
+          id: w_reifen_hl_cm
           text: !lambda |-
-            return str_sprintf("Hinten Links\n%.1f bar | %.0f°C | %.0f%%",
-              id(tire_hl_pressure), id(tire_hl_temp), id(tire_hl_battery));
+            float pitch = ${fahrzeug_radstand_cm} / 2.0f * tanf(id(level_tilt_x) * 3.14159265f / 180.0f);
+            float roll = ${fahrzeug_spurbreite_cm} / 2.0f * tanf(id(level_tilt_y) * 3.14159265f / 180.0f);
+            float h_vl = -pitch - roll;
+            float h_vr = -pitch + roll;
+            float h_hl = pitch - roll;
+            float h_hr = pitch + roll;
+            float max_h = fmaxf(fmaxf(h_vl, h_vr), fmaxf(h_hl, h_hr));
+            float lift = max_h - h_hl;
+            return str_sprintf("+%.1f cm", lift);
 
   - id: update_tire_hr
     then:
       - lvgl.label.update:
           id: w_reifen_hr
+          text:
+            format: "Hinten Rechts\n%.1f bar | %.0f°C | %.0f%%"
+            args: ["id(tire_hr_pressure)", "id(tire_hr_temp)", "id(tire_hr_battery)"]
+      - lvgl.label.update:
+          id: w_reifen_hr_cm
           text: !lambda |-
-            return str_sprintf("Hinten Rechts\n%.1f bar | %.0f°C | %.0f%%",
-              id(tire_hr_pressure), id(tire_hr_temp), id(tire_hr_battery));
+            float pitch = ${fahrzeug_radstand_cm} / 2.0f * tanf(id(level_tilt_x) * 3.14159265f / 180.0f);
+            float roll = ${fahrzeug_spurbreite_cm} / 2.0f * tanf(id(level_tilt_y) * 3.14159265f / 180.0f);
+            float h_vl = -pitch - roll;
+            float h_vr = -pitch + roll;
+            float h_hl = pitch - roll;
+            float h_hr = pitch + roll;
+            float max_h = fmaxf(fmaxf(h_vl, h_vr), fmaxf(h_hl, h_hr));
+            float lift = max_h - h_hr;
+            return str_sprintf("+%.1f cm", lift);
 
   - id: restore_page_from_screensaver
     then:
@@ -509,7 +532,7 @@ lvgl:
                     color: "0xCCCCCC"
                     label_gap: 10
                     length: 12
-                    stride: 2
+                    stride: 1
                     width: 3
                   width: 2
                 indicators:
@@ -547,7 +570,7 @@ lvgl:
                     color: "0xCCCCCC"
                     label_gap: 10
                     length: 12
-                    stride: 2
+                    stride: 1
                     width: 3
                   width: 2
                 indicators:
@@ -585,7 +608,7 @@ lvgl:
                     color: "0xCCCCCC"
                     label_gap: 10
                     length: 12
-                    stride: 2
+                    stride: 1
                     width: 3
                   width: 2
                 indicators:
@@ -1007,68 +1030,148 @@ lvgl:
         - label:
             id: w_reifen_vl
             border_side: none
-            height: 40
+            height: 50
             radius: 0
             text: "Vorne Links\n-- bar | -- °C | --%"
             text_align: center
             text_color: "0xAAAAAA"
-            text_font: font_roboto_400_14
+            text_font: font_roboto_400_20
             width: 200
             x: 20
             y: 60
+
+        - label:
+            id: w_reifen_vl_cm
+            border_side: none
+            height: 56
+            radius: 0
+            text: "-- cm"
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_700_44
+            width: 200
+            x: 20
+            y: 115
+
+        - image:
+            id: w_reifen_vl_wheel
+            src: wheel_icon
+            x: 95
+            y: 178
 
         - label:
             id: w_reifen_vr
             border_side: none
-            height: 40
+            height: 50
             radius: 0
             text: "Vorne Rechts\n-- bar | -- °C | --%"
             text_align: center
             text_color: "0xAAAAAA"
-            text_font: font_roboto_400_14
+            text_font: font_roboto_400_20
             width: 200
             x: 580
             y: 60
 
-        # --- Nivellierungs-Empfehlung ---
         - label:
-            id: w_level_empfehlung
+            id: w_reifen_vr_cm
             border_side: none
-            height: 40
+            height: 56
             radius: 0
-            text: "Berechne..."
+            text: "-- cm"
             text_align: center
-            text_color: "0xFFEB3B"
-            text_font: font_roboto_400_20
-            width: 400
-            x: 200
-            y: 435
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_700_44
+            width: 200
+            x: 580
+            y: 115
+
+        - image:
+            id: w_reifen_vr_wheel
+            src: wheel_icon
+            x: 655
+            y: 178
 
         - label:
             id: w_reifen_hl
             border_side: none
-            height: 40
+            height: 50
             radius: 0
             text: "Hinten Links\n-- bar | -- °C | --%"
             text_align: center
             text_color: "0xAAAAAA"
-            text_font: font_roboto_400_14
+            text_font: font_roboto_400_20
             width: 200
             x: 20
+            y: 260
+
+        - label:
+            id: w_reifen_hl_cm
+            border_side: none
+            height: 50
+            radius: 0
+            text: "-- cm"
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_700_44
+            width: 200
+            x: 20
+            y: 315
+
+        - image:
+            id: w_reifen_hl_wheel
+            src: wheel_icon
+            x: 95
             y: 370
 
         - label:
             id: w_reifen_hr
             border_side: none
-            height: 40
+            height: 50
             radius: 0
             text: "Hinten Rechts\n-- bar | -- °C | --%"
             text_align: center
             text_color: "0xAAAAAA"
-            text_font: font_roboto_400_14
+            text_font: font_roboto_400_20
             width: 200
             x: 580
+            y: 260
+
+        - label:
+            id: w_reifen_hr_cm
+            border_side: none
+            height: 50
+            radius: 0
+            text: "-- cm"
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_700_44
+            width: 200
+            x: 580
+            y: 315
+
+        - image:
+            id: w_reifen_hr_wheel
+            src: wheel_icon
+            x: 655
             y: 370
+
+        # --- Zurück zur Startseite ---
+        - button:
+            id: w_level_back
+            height: 40
+            width: 120
+            x: 20
+            y: 428
+            on_click:
+              - lambda: 'id(display_page) = 0;'
+              - lvgl.page.show: page_0
+            widgets:
+              -
+                label:
+                  align: center
+                  text: "Zurück"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
 
         # --- Äußerer Bezel + grüne Kugel-Füllung (Farbverlauf) ---
         - obj:
@@ -1076,13 +1179,13 @@ lvgl:
             align: CENTER
             x: 0
             y: 10
-            width: 380
-            height: 380
-            radius: 190
+            width: 260
+            height: 260
+            radius: 130
             bg_color: "0x8BC34A"
             bg_grad_color: "0x33691E"
             bg_grad_dir: VER
-            border_width: 18
+            border_width: 13
             border_color: "0xDDDDDD"
 
         # --- Fadenkreuz: horizontal ---
@@ -1091,7 +1194,7 @@ lvgl:
             align: CENTER
             x: 0
             y: 10
-            width: 340
+            width: 232
             height: 2
             bg_color: "0xDDDDDD"
             border_width: 0
@@ -1104,7 +1207,7 @@ lvgl:
             x: 0
             y: 10
             width: 2
-            height: 340
+            height: 232
             bg_color: "0xDDDDDD"
             border_width: 0
             radius: 0
@@ -1115,11 +1218,11 @@ lvgl:
             align: CENTER
             x: 0
             y: 10
-            width: 70
-            height: 70
-            radius: 35
+            width: 48
+            height: 48
+            radius: 24
             bg_opa: TRANSP
-            border_width: 3
+            border_width: 2
             border_color: "0xDDDDDD"
 
         # --- Die glänzende Blase ---
@@ -1128,9 +1231,9 @@ lvgl:
             align: CENTER
             x: 0
             y: 10
-            width: 64
-            height: 64
-            radius: 32
+            width: 44
+            height: 44
+            radius: 22
             bg_color: "0x9CCC65"
             bg_grad_color: "0x33691E"
             bg_grad_dir: VER
@@ -1139,32 +1242,14 @@ lvgl:
             widgets:
               - obj:
                   id: w_level_bubble_highlight
-                  x: 10
-                  y: 8
-                  width: 20
-                  height: 14
-                  radius: 10
+                  x: 7
+                  y: 5
+                  width: 14
+                  height: 10
+                  radius: 7
                   bg_color: "0xFFFFFF"
                   bg_opa: 60%
                   border_width: 0
-
-        # --- Zurück zur Startseite ---
-        - button:
-            id: w_level_back
-            height: 40
-            width: 120
-            x: 20
-            y: 430
-            on_click:
-              - lambda: 'id(display_page) = 0;'
-              - lvgl.page.show: page_0
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "Zurück"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
 
     # ============================================================
     # Heizung Hinten (230V) - Thermostat-Seite
@@ -1744,7 +1829,10 @@ sensor:
       then:
         - lambda: 'id(level_tilt_x) = x;'
         - script.execute: update_level_bubble
-        - script.execute: update_level_empfehlung
+        - script.execute: update_tire_vl
+        - script.execute: update_tire_vr
+        - script.execute: update_tire_hl
+        - script.execute: update_tire_hr
 
   - platform: homeassistant
     id: sensor_seitenneigung
@@ -1754,7 +1842,10 @@ sensor:
       then:
         - lambda: 'id(level_tilt_y) = x;'
         - script.execute: update_level_bubble
-        - script.execute: update_level_empfehlung
+        - script.execute: update_tire_vl
+        - script.execute: update_tire_vr
+        - script.execute: update_tire_hl
+        - script.execute: update_tire_hr
 
   # --- Reifendruck (TPMS) ---
   - platform: homeassistant
