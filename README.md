@@ -8,18 +8,35 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
 
 ## Funktionen
 
-- **Startseite**: Frischwasser- und Grauwasser-Füllstand sowie Batterieladung als Rundinstrumente mit Farbverlauf (Grün/Rot je nach Füllstand-Logik)
-- **Truma-Heizung**: großes Thermostat-Widget im Home-Assistant-Klimakarten-Stil (Drehrad zum Einstellen der Zieltemperatur), separate Boiler-Steuerung mit festen Temperaturstufen
-- **Position/Wasserwaage**: Neigungsanzeige für Camper-Nivellierung, nachgebaut nach dem Design der `realistic-bubble-level-card`
-- **Heizung Hinten**: zweite Heizzone (Home-Assistant `climate`-Entity) mit eigenem Thermostat
-- **Licht**: Ein/Aus- und Helligkeitssteuerung für vier Lampen
+**Startseite**
+- Frischwasser- und Grauwasser-Füllstand sowie Batterieladung als Rundinstrumente mit Farbverlauf (Grün/Rot je nach Füllstand-Logik)
+- Navigation zu allen weiteren Seiten
+
+**Truma-Heizung**
+- Großes Thermostat-Widget im Home-Assistant-Klimakarten-Stil (Drehrad zum Einstellen der Zieltemperatur)
+- Separate Boiler-Steuerung mit festen Temperaturstufen (Aus/40°/60°/80°)
+- Fehler- und Verbindungsstatus
+
+**Position**
+- Wasserwaage/Neigungsanzeige, nachgebaut nach dem Design der `realistic-bubble-level-card`
+- Reifendruck, -temperatur und Batteriestatus aller vier Reifen (TPMS), an den Fahrzeugecken angeordnet
+- Nivellierungs-Empfehlung: berechnet aus Neigungswinkel, Spurbreite und Radstand, wie viele Zentimeter unter welches Rad gelegt werden sollten
+
+**Heizung Hinten**
+- Zweite Heizzone (Home-Assistant `climate`-Entity) mit eigenem Thermostat
+
+**Licht**
+- Ein/Aus- und Helligkeitssteuerung für vier Lampen
+
+**Allgemein**
 - 5-Minuten-Inaktivitäts-Timeout für das Backlight, Touch-Wakeup
-- Alle Home-Assistant-Entity-IDs zentral über `substitutions:` konfigurierbar – kein Durchsuchen der Datei nötig
+- Alle Home-Assistant-Entity-IDs sowie Tankgrößen und Fahrzeugmaße zentral über `substitutions:` konfigurierbar – kein Durchsuchen der Datei nötig
 
 ## Hardware
 
 - Waveshare ESP32-S3-Touch-LCD-7 (800×480, RGB-Panel, GT911-Touch, CH422G-IO-Expander)
 - Home Assistant mit ESPHome-Add-on
+- Optional: TPMS-Reifendrucksensoren, die in Home Assistant als Entities vorliegen
 
 ## Voraussetzungen
 
@@ -34,37 +51,41 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
    wifi_ssid: "Dein-WLAN"
    wifi_password: "Dein-Passwort"
    ```
-3. Im Kopf der Datei den Abschnitt **`substitutions:`** an deine eigenen Home-Assistant-Entity-IDs anpassen – das ist der einzige Teil, den du normalerweise ändern musst:
-   ```yaml
-   substitutions:
-     entity_frischwasser_stand: "sensor.dein_frischwassersensor"
-     entity_grauwasser_stand: "sensor.dein_grauwassersensor"
-     entity_batterie_stand: "sensor.deine_batterie"
-     entity_truma_raumheizung_schalter: "switch.deine_heizung"
-     # ... usw., siehe Kommentare in der Datei
-   ```
+3. Im Kopf der Datei den Abschnitt **`substitutions:`** an deine eigenen Home-Assistant-Entity-IDs anpassen – das ist der einzige Teil, den du normalerweise ändern musst. Enthält u. a.:
+   - Tank- und Batterie-Sensoren
+   - Truma-Heizung (Schalter, Sensoren, Zieltemperaturen)
+   - Neigungssensoren für die Wasserwaage
+   - TPMS-Reifensensoren (Druck, Temperatur, Batterie – je Rad)
+   - Zweite Heizzone (`climate`-Entity)
+   - Lichter (vier Lampen)
+   - Tankgrößen (Liter) und Fahrzeugmaße (Spurbreite/Radstand, für die Nivellierungs-Empfehlung)
 4. In ESPHome kompilieren und auf das Gerät flashen
 
 ## Bekannte Einschränkungen
 
 - **Kein ESPHome-Designer-Roundtrip**: Diese Datei enthält viel handgeschriebene LVGL-Logik (`on_click`, `on_value`, dynamische `!lambda`-Bindungen). Ein Export/Re-Import über den visuellen [ESPHome Designer](https://github.com/koosoli/ESPHomeDesigner) verwirft diese Anpassungen zuverlässig. Änderungen bitte direkt in der YAML vornehmen.
 - **Speicherbedarf beim Kompilieren**: Bei limitiertem RAM (z. B. Home Assistant auf einem Raspberry Pi) kann der Compile-Vorgang mit `Killed signal terminated program cc1plus` abbrechen. Abhilfe: im ESPHome-Add-on `compile_process_limit: 1` setzen, oder Swap-Speicher hinzufügen.
+- **Vorzeichen-Richtung der Nivellierungs-Empfehlung** ist eine Annahme und muss am eigenen Fahrzeug verifiziert werden (siehe Kommentare im Script `update_level_empfehlung`).
 - Getestet mit ESPHome ab Version 2025.8.0.
 
-## Tank-/Batterie-Skalen anpassen
+## Tank-/Fahrzeugmaße anpassen
 
-Die Wertebereiche der Rundinstrumente lassen sich direkt im `substitutions:`-Block anpassen – kein Suchen im Layout-Code nötig:
+Direkt im `substitutions:`-Block, kein Suchen im Layout-Code nötig:
 
 ```yaml
 tank_frischwasser_liter: "200"
 tank_grauwasser_liter: "100"
+fahrzeug_spurbreite_cm: "200"
+fahrzeug_radstand_cm: "400"
 ```
 
-| Anzeige | Substitution | Standardwert |
+| Wert | Substitution | Standardwert |
 |---|---|---|
-| Frischwasser | `tank_frischwasser_liter` | 200 Liter |
-| Grauwasser | `tank_grauwasser_liter` | 100 Liter |
-| Batterie | – (fest 0–100 %) | 100 % |
+| Frischwasser-Skala | `tank_frischwasser_liter` | 200 Liter |
+| Grauwasser-Skala | `tank_grauwasser_liter` | 100 Liter |
+| Batterie-Skala | – (fest 0–100 %) | 100 % |
+| Spurbreite | `fahrzeug_spurbreite_cm` | 200 cm |
+| Radstand | `fahrzeug_radstand_cm` | 400 cm |
 
 ## Mitwirken
 
