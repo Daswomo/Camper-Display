@@ -33,6 +33,24 @@ substitutions:
   entity_neigung_laengs: "sensor.bluelevel_ssbtee24_langsneigung_2"
   entity_neigung_seitlich: "sensor.bluelevel_ssbtee24_seitenneigung_2"
 
+  # --- Reifendruck (TPMS) ---
+  entity_reifen_vorne_links: "sensor.tpms_f633_pressure"
+  entity_reifen_vorne_rechts: "sensor.tpms_ef40_pressure"
+  entity_reifen_hinten_links: "sensor.tpms_8f4b_pressure"
+  entity_reifen_hinten_rechts: "sensor.tpms_ee32_pressure"
+  entity_reifen_vorne_links_temp: "sensor.tpms_f633_temperature"
+  entity_reifen_vorne_rechts_temp: "sensor.tpms_ef40_temperature"
+  entity_reifen_hinten_links_temp: "sensor.tpms_8f4b_temperature"
+  entity_reifen_hinten_rechts_temp: "sensor.tpms_ee32_temperature"
+  entity_reifen_vorne_links_batterie: "sensor.tpms_f633_battery"
+  entity_reifen_vorne_rechts_batterie: "sensor.tpms_ef40_battery"
+  entity_reifen_hinten_links_batterie: "sensor.tpms_8f4b_battery"
+  entity_reifen_hinten_rechts_batterie: "sensor.tpms_ee32_battery"
+
+  # --- Fahrzeugmaße für Nivellierungs-Empfehlung (in cm) ---
+  fahrzeug_spurbreite_cm: "200"
+  fahrzeug_radstand_cm: "400"
+
   # --- Heizung Hinten (230V) ---
   entity_heizung_hinten: "climate.hinten_230v"
 
@@ -213,6 +231,55 @@ globals:
     type: float
     restore_value: false
     initial_value: '0'
+  # --- Reifendruck-Zwischenspeicher (für kombinierte Anzeige) ---
+  - id: tire_vl_pressure
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_vl_temp
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_vl_battery
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_vr_pressure
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_vr_temp
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_vr_battery
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_hl_pressure
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_hl_temp
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_hl_battery
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_hr_pressure
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_hr_temp
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: tire_hr_battery
+    type: float
+    restore_value: false
+    initial_value: '0'
 
 time:
   - platform: homeassistant
@@ -279,6 +346,71 @@ script:
               oy = oy * max_r / mag;
             }
             return (int) oy;
+
+  - id: update_level_empfehlung
+    then:
+      - lvgl.label.update:
+          id: w_level_empfehlung
+          text: !lambda |-
+            float pitch_deg = id(level_tilt_x);   // Längsneigung (vorne/hinten)
+            float roll_deg = id(level_tilt_y);    // Seitenneigung (links/rechts)
+            float radstand = ${fahrzeug_radstand_cm};
+            float spurbreite = ${fahrzeug_spurbreite_cm};
+
+            float pitch_cm = (radstand / 2.0f) * tanf(pitch_deg * 3.14159265f / 180.0f);
+            float roll_cm = (spurbreite / 2.0f) * tanf(roll_deg * 3.14159265f / 180.0f);
+            float total_cm = fabsf(pitch_cm) + fabsf(roll_cm);
+
+            if (total_cm < 0.5f) {
+              return std::string("Fahrzeug steht eben");
+            }
+
+            // ANNAHME zur Vorzeichen-Richtung - ggf. nach Test umdrehen:
+            // pitch_deg > 0  => vorne tiefer
+            // roll_deg  > 0  => links tiefer
+            bool vorne_tiefer = pitch_deg > 0;
+            bool links_tiefer = roll_deg > 0;
+
+            std::string ecke;
+            if (vorne_tiefer && links_tiefer) ecke = "Vorne Links";
+            else if (vorne_tiefer && !links_tiefer) ecke = "Vorne Rechts";
+            else if (!vorne_tiefer && links_tiefer) ecke = "Hinten Links";
+            else ecke = "Hinten Rechts";
+
+            return str_sprintf("%s: %.1f cm unterlegen", ecke.c_str(), total_cm);
+
+  # --- Reifendruck: kombinierte Anzeige (Druck/Temp/Batterie) ---
+  - id: update_tire_vl
+    then:
+      - lvgl.label.update:
+          id: w_reifen_vl
+          text: !lambda |-
+            return str_sprintf("Vorne Links\n%.1f bar | %.0f°C | %.0f%%",
+              id(tire_vl_pressure), id(tire_vl_temp), id(tire_vl_battery));
+
+  - id: update_tire_vr
+    then:
+      - lvgl.label.update:
+          id: w_reifen_vr
+          text: !lambda |-
+            return str_sprintf("Vorne Rechts\n%.1f bar | %.0f°C | %.0f%%",
+              id(tire_vr_pressure), id(tire_vr_temp), id(tire_vr_battery));
+
+  - id: update_tire_hl
+    then:
+      - lvgl.label.update:
+          id: w_reifen_hl
+          text: !lambda |-
+            return str_sprintf("Hinten Links\n%.1f bar | %.0f°C | %.0f%%",
+              id(tire_hl_pressure), id(tire_hl_temp), id(tire_hl_battery));
+
+  - id: update_tire_hr
+    then:
+      - lvgl.label.update:
+          id: w_reifen_hr
+          text: !lambda |-
+            return str_sprintf("Hinten Rechts\n%.1f bar | %.0f°C | %.0f%%",
+              id(tire_hr_pressure), id(tire_hr_temp), id(tire_hr_battery));
 
   - id: change_page_to
     parameters:
@@ -873,6 +1005,73 @@ lvgl:
             width: 200
             x: 20
             y: 15
+
+        # --- Reifendruck: vier Ecken, wie eine Draufsicht aufs Fahrzeug ---
+        - label:
+            id: w_reifen_vl
+            border_side: none
+            height: 40
+            radius: 0
+            text: "Vorne Links\n-- bar | -- °C | --%"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 20
+            y: 60
+
+        - label:
+            id: w_reifen_vr
+            border_side: none
+            height: 40
+            radius: 0
+            text: "Vorne Rechts\n-- bar | -- °C | --%"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 580
+            y: 60
+
+        # --- Nivellierungs-Empfehlung ---
+        - label:
+            id: w_level_empfehlung
+            border_side: none
+            height: 40
+            radius: 0
+            text: "Berechne..."
+            text_align: center
+            text_color: "0xFFEB3B"
+            text_font: font_roboto_400_20
+            width: 400
+            x: 200
+            y: 435
+
+        - label:
+            id: w_reifen_hl
+            border_side: none
+            height: 40
+            radius: 0
+            text: "Hinten Links\n-- bar | -- °C | --%"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 20
+            y: 370
+
+        - label:
+            id: w_reifen_hr
+            border_side: none
+            height: 40
+            radius: 0
+            text: "Hinten Rechts\n-- bar | -- °C | --%"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 580
+            y: 370
 
         # --- Äußerer Bezel + grüne Kugel-Füllung (Farbverlauf) ---
         - obj:
@@ -1532,6 +1731,7 @@ sensor:
       then:
         - lambda: 'id(level_tilt_x) = x;'
         - script.execute: update_level_bubble
+        - script.execute: update_level_empfehlung
 
   - platform: homeassistant
     id: sensor_seitenneigung
@@ -1541,6 +1741,104 @@ sensor:
       then:
         - lambda: 'id(level_tilt_y) = x;'
         - script.execute: update_level_bubble
+        - script.execute: update_level_empfehlung
+
+  # --- Reifendruck (TPMS) ---
+  - platform: homeassistant
+    id: sensor_reifen_vl
+    entity_id: ${entity_reifen_vorne_links}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_vl_pressure) = x;'
+      - script.execute: update_tire_vl
+
+  - platform: homeassistant
+    id: sensor_reifen_vl_temp
+    entity_id: ${entity_reifen_vorne_links_temp}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_vl_temp) = x;'
+      - script.execute: update_tire_vl
+
+  - platform: homeassistant
+    id: sensor_reifen_vl_batterie
+    entity_id: ${entity_reifen_vorne_links_batterie}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_vl_battery) = x;'
+      - script.execute: update_tire_vl
+
+  - platform: homeassistant
+    id: sensor_reifen_vr
+    entity_id: ${entity_reifen_vorne_rechts}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_vr_pressure) = x;'
+      - script.execute: update_tire_vr
+
+  - platform: homeassistant
+    id: sensor_reifen_vr_temp
+    entity_id: ${entity_reifen_vorne_rechts_temp}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_vr_temp) = x;'
+      - script.execute: update_tire_vr
+
+  - platform: homeassistant
+    id: sensor_reifen_vr_batterie
+    entity_id: ${entity_reifen_vorne_rechts_batterie}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_vr_battery) = x;'
+      - script.execute: update_tire_vr
+
+  - platform: homeassistant
+    id: sensor_reifen_hl
+    entity_id: ${entity_reifen_hinten_links}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_hl_pressure) = x;'
+      - script.execute: update_tire_hl
+
+  - platform: homeassistant
+    id: sensor_reifen_hl_temp
+    entity_id: ${entity_reifen_hinten_links_temp}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_hl_temp) = x;'
+      - script.execute: update_tire_hl
+
+  - platform: homeassistant
+    id: sensor_reifen_hl_batterie
+    entity_id: ${entity_reifen_hinten_links_batterie}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_hl_battery) = x;'
+      - script.execute: update_tire_hl
+
+  - platform: homeassistant
+    id: sensor_reifen_hr
+    entity_id: ${entity_reifen_hinten_rechts}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_hr_pressure) = x;'
+      - script.execute: update_tire_hr
+
+  - platform: homeassistant
+    id: sensor_reifen_hr_temp
+    entity_id: ${entity_reifen_hinten_rechts_temp}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_hr_temp) = x;'
+      - script.execute: update_tire_hr
+
+  - platform: homeassistant
+    id: sensor_reifen_hr_batterie
+    entity_id: ${entity_reifen_hinten_rechts_batterie}
+    internal: true
+    on_value:
+      - lambda: 'id(tire_hr_battery) = x;'
+      - script.execute: update_tire_hr
 
   # --- Heizung Hinten (230V) ---
   - platform: homeassistant
