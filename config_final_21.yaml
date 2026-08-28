@@ -115,11 +115,11 @@ touchscreen:
     mirror_y: false
   on_release:
     - if:
-        condition: lvgl.is_paused
+        condition:
+          lambda: 'return id(screensaver_active);'
         then:
-          - lvgl.resume:
+          - script.execute: restore_page_from_screensaver
           - lvgl.widget.redraw:
-          - switch.turn_on: lcdbacklight
 
 display:
   - platform: mipi_rgb
@@ -207,6 +207,10 @@ globals:
     type: int
     restore_value: true
     initial_value: '0'
+  - id: screensaver_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
   - id: page_refresh_default_s
     type: int
     restore_value: true
@@ -314,10 +318,10 @@ font:
     glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
     ignore_missing_glyphs: true
 
-# --- Hymer-Logo als Hintergrundbild (Startseite) ---
+# --- Smart Womo HA Logo als Hintergrundbild (Startseite) ---
 image:
-  - file: "images/hymer_logo.png"
-    id: hymer_logo
+  - file: "images/smart_womo_logo.png"
+    id: smart_womo_logo
     type: RGB565
     transparency: alpha_channel
 
@@ -412,27 +416,9 @@ script:
             return str_sprintf("Hinten Rechts\n%.1f bar | %.0f°C | %.0f%%",
               id(tire_hr_pressure), id(tire_hr_temp), id(tire_hr_battery));
 
-  - id: change_page_to
-    parameters:
-      target_page: int
+  - id: restore_page_from_screensaver
     then:
-      - lambda: |-
-          int pages_count = 2;
-          int target = target_page;
-          while (target < 0) target += pages_count;
-          target %= pages_count;
-
-          uint32_t now = millis();
-          if (now - id(last_page_switch_time) < 2000) {
-            ESP_LOGD("display", "Page change ignored (debounce), last switch was %u ms ago", (unsigned int) (now - id(last_page_switch_time)));
-            return;
-          }
-
-          if (id(display_page) != target) {
-            id(last_page_switch_time) = now;
-            id(display_page) = target;
-            ESP_LOGI("display", "Switched to page %d", target);
-          }
+      - lambda: 'id(screensaver_active) = false;'
       - if:
           condition:
             lambda: 'return id(display_page) == 0;'
@@ -443,6 +429,21 @@ script:
             lambda: 'return id(display_page) == 1;'
           then:
             - lvgl.page.show: page_1
+      - if:
+          condition:
+            lambda: 'return id(display_page) == 2;'
+          then:
+            - lvgl.page.show: page_2
+      - if:
+          condition:
+            lambda: 'return id(display_page) == 3;'
+          then:
+            - lvgl.page.show: page_3
+      - if:
+          condition:
+            lambda: 'return id(display_page) == 4;'
+          then:
+            - lvgl.page.show: page_4
 
   - id: manage_run_and_sleep
     mode: restart
@@ -484,15 +485,15 @@ lvgl:
   on_idle:
     timeout: 5min
     then:
-      - switch.turn_off: lcdbacklight
-      - lvgl.pause:
+      - lambda: 'id(screensaver_active) = true;'
+      - lvgl.page.show: page_screensaver
   pages:
     - id: page_0
       widgets:
-        # --- Hymer-Logo als Hintergrund ---
+        # --- Smart Womo HA Logo als Hintergrund ---
         - image:
-            id: w_hymer_bg
-            src: hymer_logo
+            id: w_logo_bg
+            src: smart_womo_logo
             align: CENTER
             x: 0
             y: -20
@@ -634,6 +635,7 @@ lvgl:
             x: 340
             y: 20
             on_click:
+              - lambda: 'id(display_page) = 1;'
               - lvgl.page.show: page_1
             widgets:
               -
@@ -651,6 +653,7 @@ lvgl:
             x: 470
             y: 20
             on_click:
+              - lambda: 'id(display_page) = 2;'
               - lvgl.page.show: page_2
             widgets:
               -
@@ -668,6 +671,7 @@ lvgl:
             x: 600
             y: 20
             on_click:
+              - lambda: 'id(display_page) = 3;'
               - lvgl.page.show: page_3
             widgets:
               -
@@ -685,6 +689,7 @@ lvgl:
             x: 340
             y: 70
             on_click:
+              - lambda: 'id(display_page) = 4;'
               - lvgl.page.show: page_4
             widgets:
               -
@@ -980,6 +985,7 @@ lvgl:
             x: 20
             y: 430
             on_click:
+              - lambda: 'id(display_page) = 0;'
               - lvgl.page.show: page_0
             widgets:
               -
@@ -1159,6 +1165,7 @@ lvgl:
             x: 20
             y: 430
             on_click:
+              - lambda: 'id(display_page) = 0;'
               - lvgl.page.show: page_0
             widgets:
               -
@@ -1296,6 +1303,7 @@ lvgl:
             x: 20
             y: 430
             on_click:
+              - lambda: 'id(display_page) = 0;'
               - lvgl.page.show: page_0
             widgets:
               -
@@ -1602,6 +1610,7 @@ lvgl:
             x: 20
             y: 430
             on_click:
+              - lambda: 'id(display_page) = 0;'
               - lvgl.page.show: page_0
             widgets:
               -
@@ -1610,6 +1619,19 @@ lvgl:
                   text: "Zurück"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
+
+    # ============================================================
+    # Bildschirmschoner: großes Logo, erscheint nach Inaktivität
+    # ============================================================
+    - id: page_screensaver
+      widgets:
+        - image:
+            id: w_screensaver_logo
+            src: smart_womo_logo
+            align: CENTER
+            x: 0
+            y: 0
+            image_opa: 100%
 
 binary_sensor:
   # --- Truma Status ---
