@@ -6,11 +6,12 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
 ![ESPHome](https://img.shields.io/badge/ESPHome-2025.8.0%2B-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
+Ein Projekt von **SmartWomoHA** – *Help for free*.
+
 ## Funktionen
 
 **Startseite**
 - Frischwasser- und Grauwasser-Füllstand sowie Batterieladung als Rundinstrumente mit Farbverlauf (Grün/Rot je nach Füllstand-Logik)
-- Eigenes Logo als Hintergrundbild
 - Navigation zu allen weiteren Seiten
 
 **Truma-Heizung**
@@ -20,8 +21,7 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
 
 **Position**
 - Wasserwaage/Neigungsanzeige, nachgebaut nach dem Design der `realistic-bubble-level-card`
-- Reifendruck, -temperatur und Batteriestatus aller vier Reifen (TPMS), an den Fahrzeugecken angeordnet
-- Nivellierungs-Empfehlung: berechnet aus Neigungswinkel, Spurbreite und Radstand, wie viele Zentimeter unter welches Rad gelegt werden sollten
+- Reifendruck, -temperatur, -batteriestatus und individuelle Unterlege-Empfehlung (in cm) für alle vier Reifen, an den Fahrzeugecken angeordnet – mit Rad-Icon
 
 **Heizung Hinten**
 - Zweite Heizzone (Home-Assistant `climate`-Entity) mit eigenem Thermostat
@@ -56,7 +56,7 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
    wifi_ssid: "Dein-WLAN"
    wifi_password: "Dein-Passwort"
    ```
-3. Dein Logo als `images/smart_womo_logo.png` (transparenter Hintergrund empfohlen) im ESPHome-Verzeichnis ablegen, oder eigenes Bild verwenden und den Dateinamen im `image:`-Block anpassen
+3. Dein Logo als `images/smart_womo_logo.png` sowie `images/wheel_icon.png` (transparenter Hintergrund empfohlen) im ESPHome-Verzeichnis ablegen, oder eigene Bilder verwenden und die Dateinamen im `image:`-Block anpassen
 4. Im Kopf der Datei den Abschnitt **`substitutions:`** an deine eigenen Home-Assistant-Entity-IDs anpassen – das ist der einzige Teil, den du normalerweise ändern musst. Enthält u. a.:
    - Tank- und Batterie-Sensoren
    - Truma-Heizung (Schalter, Sensoren, Zieltemperaturen)
@@ -71,7 +71,7 @@ Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-
 
 - **Kein ESPHome-Designer-Roundtrip**: Diese Datei enthält viel handgeschriebene LVGL-Logik (`on_click`, `on_value`, dynamische `!lambda`-Bindungen). Ein Export/Re-Import über den visuellen [ESPHome Designer](https://github.com/koosoli/ESPHomeDesigner) verwirft diese Anpassungen zuverlässig. Änderungen bitte direkt in der YAML vornehmen.
 - **Speicherbedarf beim Kompilieren**: Bei limitiertem RAM (z. B. Home Assistant auf einem Raspberry Pi) kann der Compile-Vorgang mit `Killed signal terminated program cc1plus` abbrechen. Abhilfe: im ESPHome-Add-on `compile_process_limit: 1` setzen, oder Swap-Speicher hinzufügen.
-- **Vorzeichen-Richtung der Nivellierungs-Empfehlung** ist eine Annahme und muss am eigenen Fahrzeug verifiziert werden (siehe Kommentare im Script `update_level_empfehlung`).
+- **Vorzeichen-Richtung der Reifen-Unterlege-Empfehlung** ist eine Annahme und muss am eigenen Fahrzeug verifiziert werden.
 - **Bilder aus Flash, nicht von SD-Karte**: Obwohl das Board einen Micro-SD-Slot besitzt, unterstützt ESPHome das direkte Laden von LVGL-Bildern von der SD-Karte aktuell nicht offiziell. Bilder werden zur Kompilierzeit in die Firmware eingebettet.
 - Getestet mit ESPHome ab Version 2025.8.0.
 
@@ -97,6 +97,16 @@ fahrzeug_radstand_cm: "400"
 ## Mitwirken
 
 Issues und Pull Requests sind willkommen. Bei strukturellen Änderungen bitte kurz beschreiben, welche Home-Assistant-Domain (z. B. `switch`, `climate`, `light`) betroffen ist, da sich die Steuerlogik je nach Domain unterscheidet.
+
+## Unterstützung
+
+Dieses Projekt ist und bleibt kostenlos – ganz im Sinne von **SmartWomoHA: Help for free**.
+
+Wenn es dir weitergeholfen hat und du dich erkenntlich zeigen möchtest, freue ich mich über eine kleine Spende:
+
+👉 **[Spenden-Link hier einfügen]** *(z. B. PayPal, Ko-fi oder Buy Me a Coffee)*
+
+Verpflichtend ist das natürlich nicht – jedes Feedback, jeder Stern auf GitHub und jeder gemeldete Fehler hilft dem Projekt genauso weiter.
 
 ## Lizenz
 
