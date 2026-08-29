@@ -104,7 +104,7 @@ Dieses Projekt ist und bleibt kostenlos – ganz im Sinne von **SmartWomoHA: Hel
 
 Wenn es dir weitergeholfen hat und du dich erkenntlich zeigen möchtest, freue ich mich über eine kleine Spende:
 
-👉 paypal.me/smartwomoha  (z. B. PayPal, Ko-fi oder Buy Me a Coffee)*
+👉 **[PayPal: paypal.me/smartwomoha](https://paypal.me/smartwomoha)**
 
 Verpflichtend ist das natürlich nicht – jedes Feedback, jeder Stern auf GitHub und jeder gemeldete Fehler hilft dem Projekt genauso weiter.
 
