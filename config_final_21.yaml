@@ -59,6 +59,11 @@ substitutions:
   entity_licht_bett_gross: "light.dusche_bett_gross"
   entity_licht_dusche: "light.dusche_dusche"
   entity_licht_markise: "light.led_makise_led_markise"
+  entity_licht_wiz: "light.wiz_rgbw_tunable_e14e7a"
+  # Platzhalter - bitte auf die echten Entity-IDs anpassen, sobald bekannt
+  entity_licht_6: "light.licht_6_PLATZHALTER"
+  entity_licht_7: "light.licht_7_PLATZHALTER"
+  entity_licht_8: "light.licht_8_PLATZHALTER"
 
 esphome:
   name: ${name}
@@ -67,9 +72,17 @@ esphome:
   platformio_options:
     board_upload.maximum_ram_size: 524288
 
+# --- Truma CI-Bus / LIN Anbindung (auf diesem ESP32 mitintegriert) ---
+external_components:
+  - source:
+      type: git
+      url: https://github.com/havanti/esphome-truma
+    components: [truma_inetbox, uart]
+    refresh: always
+
 esp32:
   variant: esp32s3
-  flash_size: 8MB
+  flash_size: 16MB
   cpu_frequency: 240MHz
   framework:
     type: esp-idf
@@ -91,11 +104,30 @@ wifi:
 captive_portal:
 
 logger:
+  baud_rate: 0   # UART-Logging aus, da GPIO43/44 jetzt vom Truma-UART belegt sind
+  logs:
+    truma_inetbox: DEBUG
+    truma_inetbox.LinBusProtocol: DEBUG
+    truma_inetbox.LinBusListener: DEBUG
+    truma_inetbox.TrumaiNetBoxApp: DEBUG
 
 api:
+  encryption:
+    key: !secret api_encryption_key
+
+# --- MQTT: zusätzlich zur HA-API alle Entities auch per MQTT veröffentlichen ---
+# Broker-Zugangsdaten in secrets.yaml eintragen (siehe Hinweis unten).
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  # discovery: false   # einkommentieren, falls die Geräte NICHT zusätzlich
+                        # per MQTT-Discovery in HA auftauchen sollen
+                        # (du hast sie ja schon über die native API dort)
 
 ota:
   - platform: esphome
+    password: !secret ota_password
 
 ch422g:
   - id: ch422g_hub
@@ -146,11 +178,11 @@ display:
       ignore_strapping_warning: true
     pclk_pin: GPIO7
     pclk_inverted: true
-    hsync_back_porch: 8
-    hsync_front_porch: 8
-    hsync_pulse_width: 4
-    vsync_back_porch: 8
-    vsync_front_porch: 8
+    hsync_back_porch: 30
+    hsync_front_porch: 210
+    hsync_pulse_width: 30
+    vsync_back_porch: 4
+    vsync_front_porch: 4
     vsync_pulse_width: 4
     data_pins:
       red: [1, 2, 42, 41, 40]
@@ -168,17 +200,6 @@ switch:
         output: true
       inverted: false
     restore_mode: ALWAYS_ON
-
-  # --- Truma Steuerung ---
-  - platform: homeassistant
-    id: truma_room_heater_active
-    entity_id: ${entity_truma_raumheizung_schalter}
-    internal: true
-
-  - platform: homeassistant
-    id: truma_water_heater_active
-    entity_id: ${entity_truma_boiler_schalter}
-    internal: true
 
 light:
   - platform: monochromatic
@@ -202,7 +223,109 @@ i2c:
     scl: GPIO9
     scan: true
 
+# --- Truma UART (CI-Bus / LIN, über Pegelwandler) ---
+# Nutzt den physischen UART2-Header (P1: GND, RX, TX, +3.3V) dieses Boards.
+# WICHTIG: UART1 (USB-Debug/Flash-Port) und UART2 (dieser Header) teilen
+# sich intern dieselbe Hardware-UART0 (GPIO43/44) und werden per DIP-Schalter
+# auf der Platine umgeschaltet. Schalter muss auf "UART2" stehen, damit der
+# Header aktiv ist - dann ist der USB-Serial-Port für Flashen/Logs getrennt
+# und Updates müssen per OTA laufen. Logger läuft daher hier nur noch über
+# das Netzwerk (api/OTA), nicht mehr über USB-Seriell.
+uart:
+  - id: truma_uart
+    tx_pin: GPIO43
+    rx_pin: GPIO44
+    baud_rate: 9600
+    data_bits: 8
+    parity: NONE
+    stop_bits: 2
+
+truma_inetbox:
+  id: truma_inetbox_id
+  uart_id: truma_uart
+  time_id: ha_time
+
 globals:
+  - id: decke_r
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: decke_g
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: decke_b
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: decke_w
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: dusche_r
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: dusche_g
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: dusche_b
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: bett_r
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: bett_g
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: bett_b
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: markise_r
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: markise_g
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: markise_b
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: markise_w
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: wiz_r
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: wiz_g
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: wiz_b
+    type: int
+    restore_value: false
+    initial_value: '255'
+  - id: wiz_w
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: aircon_vent_state
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+  - id: fan_mode_state
+    type: std::string
+    restore_value: false
+    initial_value: '""'
   - id: display_page
     type: int
     restore_value: true
@@ -288,6 +411,9 @@ globals:
 time:
   - platform: homeassistant
     id: ha_time
+    on_time_sync:
+      then:
+        - truma_inetbox.clock.set:
 
 font:
   - file:
@@ -298,6 +424,7 @@ font:
     id: font_roboto_400_20
     size: 20
     glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
+    glyphs: "ÄÖÜäöüß"
     ignore_missing_glyphs: true
   - file:
       type: gfonts
@@ -307,6 +434,17 @@ font:
     id: font_roboto_400_14
     size: 14
     glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
+    glyphs: "ÄÖÜäöüß"
+    ignore_missing_glyphs: true
+  - file:
+      type: gfonts
+      family: "Roboto"
+      weight: 400
+      italic: false
+    id: font_roboto_400_28
+    size: 28
+    glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
+    glyphs: "ÄÖÜäöüß"
     ignore_missing_glyphs: true
   - file:
       type: gfonts
@@ -316,6 +454,7 @@ font:
     id: font_roboto_700_44
     size: 44
     glyphsets: [GF_Latin_Kernel, GF_Latin_Core, GF_Arabic_Core, GF_Cyrillic_Core, GF_Greek_Core, GF_Latin_African, GF_Latin_PriAfrican, GF_Latin_Vietnamese]
+    glyphs: "ÄÖÜäöüß"
     ignore_missing_glyphs: true
 
 # --- Smart Womo HA Logo (Bildschirmschoner) ---
@@ -339,24 +478,31 @@ script:
           id: w_level_bubble
           x: !lambda |-
             float scale = 8.0f;
-            float ox = id(level_tilt_x) * scale;
-            float oy = id(level_tilt_y) * scale;
-            float mag = sqrtf(ox * ox + oy * oy);
+            float raw_x = id(level_tilt_x) * scale;
+            float raw_y = id(level_tilt_y) * scale;
+            float mag = sqrtf(raw_x * raw_x + raw_y * raw_y);
             float max_r = 106.0f;
             if (mag > max_r && mag > 0) {
-              ox = ox * max_r / mag;
+              raw_x = raw_x * max_r / mag;
+              raw_y = raw_y * max_r / mag;
             }
-            return (int) ox;
+            // 90° nach links gedreht: neue x-Achse = alte y-Achse
+            float ox = raw_y;
+            return 378 + (int) ox;
           y: !lambda |-
             float scale = 8.0f;
-            float ox = id(level_tilt_x) * scale;
-            float oy = id(level_tilt_y) * scale;
-            float mag = sqrtf(ox * ox + oy * oy);
+            float raw_x = id(level_tilt_x) * scale;
+            float raw_y = id(level_tilt_y) * scale;
+            float mag = sqrtf(raw_x * raw_x + raw_y * raw_y);
             float max_r = 106.0f;
             if (mag > max_r && mag > 0) {
-              oy = oy * max_r / mag;
+              raw_x = raw_x * max_r / mag;
+              raw_y = raw_y * max_r / mag;
             }
-            return (int) oy;
+            // 90° nach links gedreht: neue y-Achse = -alte x-Achse
+            float oy = -raw_x;
+            return 228 + (int) oy;
+      - lvgl.widget.redraw: w_level_bubble
 
   # --- Reifendruck: kombinierte Anzeige (Druck/Temp/Batterie) + separates cm-Label ---
   - id: update_tire_vl
@@ -748,23 +894,242 @@ lvgl:
         - label:
             id: w_truma_error_label
             border_side: none
-            height: 20
+            height: 26
             radius: 0
             text: "Kein Fehler"
             text_align: right
             text_color: "0x00FF00"
-            text_font: font_roboto_400_14
+            text_font: font_roboto_400_20
             width: 150
-            x: 630
+            x: 610
             y: 15
 
+        - label:
+            id: w_truma_error_code_label
+            border_side: none
+            height: 20
+            radius: 0
+            text: ""
+            text_align: right
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 150
+            x: 610
+            y: 41
+
         # ==========================================================
-        # Großes Thermostat: Raumheizung (HA-Klimakarte-Stil)
+        # Aventa Klimaanlage (links)
         # ==========================================================
+        - label:
+            id: w_aircon_title
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Truma Aventa"
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 180
+            x: 20
+            y: 15
+
+        - arc:
+            id: w_aircon_target_arc
+            x: 20
+            y: 40
+            width: 180
+            height: 180
+            min_value: 16
+            max_value: 31
+            start_angle: 135
+            end_angle: 45
+            arc_width: 14
+            arc_rounded: true
+            adjustable: true
+            change_rate: 360
+            indicator:
+              arc_color: "0x3498DB"
+            value: !lambda |-
+              float t = id(local_truma_aircon).target_temperature;
+              if (std::isnan(t)) return 16;
+              return (int) t;
+            on_value:
+              - lvgl.label.update:
+                  id: w_aircon_target_arc_value
+                  text:
+                    format: "%.0f°"
+                    args: ["x"]
+            on_release:
+              - climate.control:
+                  id: local_truma_aircon
+                  target_temperature: !lambda 'return (float) x;'
+            widgets:
+              - label:
+                  id: w_aircon_target_arc_value
+                  align: center
+                  text: "24°"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_700_44
+
+        - label:
+            id: w_aircon_temp_value
+            border_side: none
+            height: 32
+            radius: 0
+            text: "Aktuell: -- °C"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_28
+            width: 180
+            x: 20
+            y: 224
+
+        # --- Aventa Modus: Aus / Kühlen / Nur Lüften ---
+        - buttonmatrix:
+            id: w_aircon_mode_matrix
+            x: 20
+            y: 262
+            width: 180
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_aircon_mode_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_aircon
+                                  mode: "OFF"
+                  - id: w_aircon_mode_cool
+                    text: "Kühl"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_aircon
+                                  mode: "COOL"
+                              - delay: 5s
+                              - climate.control:
+                                  id: local_truma_aircon
+                                  target_temperature: 21
+                  - id: w_aircon_mode_fan
+                    text: "Lüft"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_aircon
+                                  mode: "FAN_ONLY"
+
+        # --- Aventa Lüfterstufe: Low / Mid / High ---
+        - label:
+            id: w_aircon_vent_label
+            border_side: none
+            height: 14
+            radius: 0
+            text: "Lüfterstufe:"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 180
+            x: 20
+            y: 300
+
+        - buttonmatrix:
+            id: w_aircon_vent_matrix
+            x: 20
+            y: 316
+            width: 180
+            height: 32
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_aircon_vent_low
+                    text: "Low"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - select.set:
+                                  id: local_truma_aircon_vent
+                                  option: "Low"
+                  - id: w_aircon_vent_mid
+                    text: "Mid"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - select.set:
+                                  id: local_truma_aircon_vent
+                                  option: "Mid"
+                  - id: w_aircon_vent_high
+                    text: "High"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - select.set:
+                                  id: local_truma_aircon_vent
+                                  option: "High"
+
+        # ==========================================================
+        # Großes Thermostat: Raumheizung
+        # ==========================================================
+        - label:
+            id: w_room_title
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Truma Combi 6"
+            text_align: center
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 200
+            x: 300
+            y: 15
+
         - arc:
             id: w_room_target_arc
             x: 300
-            y: 30
+            y: 45
             width: 200
             height: 200
             min_value: 5
@@ -777,7 +1142,10 @@ lvgl:
             change_rate: 360
             indicator:
               arc_color: "0xFF6B35"
-            value: !lambda return (int) id(truma_target_room_temp_current).state;
+            value: !lambda |-
+              float t = id(local_truma_room).target_temperature;
+              if (std::isnan(t)) return 5;
+              return (int) t;
             on_value:
               - lvgl.label.update:
                   id: w_room_target_arc_value
@@ -785,14 +1153,9 @@ lvgl:
                     format: "%.0f°"
                     args: ["x"]
             on_release:
-              - homeassistant.action:
-                  action: number.set_value
-                  data:
-                    entity_id: ${entity_truma_raumtemperatur_soll}
-                  variables:
-                    new_temp: !lambda 'return (float) x;'
-                  data_template:
-                    value: "{{ new_temp }}"
+              - climate.control:
+                  id: local_truma_room
+                  target_temperature: !lambda 'return (float) x;'
             widgets:
               - label:
                   id: w_room_target_arc_value
@@ -804,194 +1167,216 @@ lvgl:
         - label:
             id: w_room_temp_value
             border_side: none
-            height: 24
+            height: 32
+            radius: 0
+            text: "Aktuell: -- °C"
+            text_align: center
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_28
+            width: 200
+            x: 300
+            y: 247
+
+        # --- Raumheizung: Aus / Heizen ---
+        - buttonmatrix:
+            id: w_room_mode_matrix
+            x: 300
+            y: 292
+            width: 200
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_room_mode_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_room
+                                  mode: "OFF"
+                  - id: w_room_mode_heat
+                    text: "Heizen"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_room
+                                  mode: "HEAT"
+                              - delay: 5s
+                              - climate.control:
+                                  id: local_truma_room
+                                  target_temperature: 21
+
+        # --- Heizstufe: ECO / BOOST ---
+        - label:
+            id: w_room_fan_label
+            border_side: none
+            height: 14
+            radius: 0
+            text: "Heizstufe:"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 300
+            y: 332
+
+        - buttonmatrix:
+            id: w_room_fan_matrix
+            x: 300
+            y: 348
+            width: 200
+            height: 32
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_room_fan_eco
+                    text: "ECO"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - select.set:
+                                  id: local_truma_fan_mode
+                                  option: "ECO"
+                  - id: w_room_fan_boost
+                    text: "BOOST"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - select.set:
+                                  id: local_truma_fan_mode
+                                  option: "BOOST"
+
+        # ==========================================================
+        # Boiler (rechts neben Raumheizung)
+        # ==========================================================
+        - label:
+            id: w_water_title
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Boiler"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 200
+            x: 550
+            y: 45
+
+        - label:
+            id: w_water_temp_value
+            border_side: none
+            height: 20
             radius: 0
             text: "Aktuell: -- °C"
             text_align: center
             text_color: "0xAAAAAA"
             text_font: font_roboto_400_14
             width: 200
-            x: 300
-            y: 232
+            x: 550
+            y: 70
 
-        # --- Raumheizung an/aus ---
-        - button:
-            id: w_room_heater_toggle
-            checkable: true
-            height: 44
-            width: 200
-            x: 300
-            y: 265
-            on_click:
-              - homeassistant.action:
-                  action: homeassistant.toggle
-                  data:
-                    entity_id: ${entity_truma_raumheizung_schalter}
-            state:
-              checked: !lambda return id(truma_room_heater_active).state;
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "Raumheizung"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
-
-        # ==========================================================
-        # Wasser-Sektion
-        # ==========================================================
-        - label:
-            id: w_water_temp_label
-            border_side: none
-            height: 30
-            radius: 0
-            text: "Wasser:"
-            text_color: "0xAAAAAA"
-            text_font: font_roboto_400_20
-            width: 100
-            x: 20
-            y: 340
-        - label:
-            id: w_water_temp_value
-            border_side: none
-            height: 30
-            radius: 0
-            text: "--"
-            text_color: "0xFFFFFF"
-            text_font: font_roboto_400_20
-            width: 100
-            x: 100
-            y: 340
-
-        # --- Wasserheizung an/aus ---
-        - button:
-            id: w_water_heater_toggle
-            checkable: true
+        # --- Boiler: Aus / 40° / 60° / 80° ---
+        - buttonmatrix:
+            id: w_water_target_matrix
+            x: 550
+            y: 100
+            width: 202
             height: 40
-            width: 150
-            x: 20
-            y: 380
-            on_click:
-              - homeassistant.action:
-                  action: homeassistant.toggle
-                  data:
-                    entity_id: ${entity_truma_boiler_schalter}
-            state:
-              checked: !lambda return id(truma_water_heater_active).state;
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "Boiler"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_water_target_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_water
+                                  mode: "OFF"
+                  - id: w_water_target_40
+                    text: "40°"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_water
+                                  mode: "HEAT"
+                                  target_temperature: 40
+                  - id: w_water_target_60
+                    text: "60°"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_water
+                                  mode: "HEAT"
+                                  target_temperature: 60
+                  - id: w_water_target_80
+                    text: "80°"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - climate.control:
+                                  id: local_truma_water
+                                  mode: "HEAT"
+                                  target_temperature: 80
 
-        # --- Wasser-Solltemperatur: eine Taste je Stufe ---
-        - label:
-            id: w_water_target_label
-            border_side: none
-            height: 30
-            radius: 0
-            text: "Soll:"
-            text_color: "0xAAAAAA"
-            text_font: font_roboto_400_20
-            width: 100
-            x: 220
-            y: 380
-
-        - button:
-            id: w_water_target_off
-            checkable: true
-            height: 40
-            width: 60
-            x: 260
-            y: 380
-            on_click:
-              - homeassistant.action:
-                  action: number.set_value
-                  data:
-                    entity_id: ${entity_truma_wassertemperatur_soll}
-                    value: "0"
-            state:
-              checked: !lambda return id(truma_target_water_temp_current).state == 0;
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "Aus"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
-
-        - button:
-            id: w_water_target_40
-            checkable: true
-            height: 40
-            width: 60
-            x: 328
-            y: 380
-            on_click:
-              - homeassistant.action:
-                  action: number.set_value
-                  data:
-                    entity_id: ${entity_truma_wassertemperatur_soll}
-                    value: "40"
-            state:
-              checked: !lambda return id(truma_target_water_temp_current).state == 40;
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "40°"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
-
-        - button:
-            id: w_water_target_60
-            checkable: true
-            height: 40
-            width: 60
-            x: 396
-            y: 380
-            on_click:
-              - homeassistant.action:
-                  action: number.set_value
-                  data:
-                    entity_id: ${entity_truma_wassertemperatur_soll}
-                    value: "60"
-            state:
-              checked: !lambda return id(truma_target_water_temp_current).state == 60;
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "60°"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
-
-        - button:
-            id: w_water_target_80
-            checkable: true
-            height: 40
-            width: 60
-            x: 464
-            y: 380
-            on_click:
-              - homeassistant.action:
-                  action: number.set_value
-                  data:
-                    entity_id: ${entity_truma_wassertemperatur_soll}
-                    value: "80"
-            state:
-              checked: !lambda return id(truma_target_water_temp_current).state == 80;
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "80°"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
-
-        # --- Zurück zur Startseite ---
         - button:
             id: w_back_to_main
             height: 40
@@ -1005,7 +1390,7 @@ lvgl:
               -
                 label:
                   align: center
-                  text: "Zurück"
+                  text: "Zurueck"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
@@ -1161,7 +1546,7 @@ lvgl:
             height: 40
             width: 120
             x: 20
-            y: 428
+            y: 430
             on_click:
               - lambda: 'id(display_page) = 0;'
               - lvgl.page.show: page_0
@@ -1169,7 +1554,7 @@ lvgl:
               -
                 label:
                   align: center
-                  text: "Zurück"
+                  text: "Zurueck"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
@@ -1228,9 +1613,8 @@ lvgl:
         # --- Die glänzende Blase ---
         - obj:
             id: w_level_bubble
-            align: CENTER
-            x: 0
-            y: 10
+            x: 378
+            y: 228
             width: 44
             height: 44
             radius: 22
@@ -1385,7 +1769,7 @@ lvgl:
               -
                 label:
                   align: center
-                  text: "Zurück"
+                  text: "Zurueck"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
@@ -1397,7 +1781,7 @@ lvgl:
         - label:
             id: w_licht_title
             border_side: none
-            height: 30
+            height: 26
             radius: 0
             text: "Licht"
             text_color: "0xFFFFFF"
@@ -1406,61 +1790,68 @@ lvgl:
             x: 300
             y: 15
 
-        # ==========================================================
-        # Decke (nur Ein/Aus + Helligkeit)
-        # ==========================================================
         - label:
             id: w_licht_decke_label
             border_side: none
-            height: 26
+            height: 36
             radius: 0
             text: "Decke"
             text_color: "0xAAAAAA"
-            text_font: font_roboto_400_20
-            width: 150
-            x: 20
-            y: 60
-
-        - button:
-            id: w_licht_decke_toggle
-            checkable: true
-            height: 40
-            width: 150
-            x: 20
-            y: 90
-            on_click:
-              - homeassistant.action:
-                  action: homeassistant.toggle
-                  data:
-                    entity_id: ${entity_licht_decke}
-            state:
-              checked: !lambda return id(licht_decke_state).state == "on";
-            widgets:
-              -
-                label:
-                  align: center
-                  text: "Ein/Aus"
-                  text_color: "0xFFFFFF"
-                  text_font: font_roboto_400_14
-
-        - label:
-            id: w_licht_decke_helligkeit_label
-            border_side: none
-            height: 20
-            radius: 0
-            text: "Helligkeit"
-            text_color: "0xAAAAAA"
             text_font: font_roboto_400_14
-            width: 150
-            x: 20
-            y: 145
+            width: 90
+            x: 10
+            y: 55
+
+        - buttonmatrix:
+            id: w_licht_decke_matrix
+            x: 105
+            y: 55
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_decke_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_decke}
+                  - id: w_licht_decke_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_decke}
 
         - slider:
             id: w_licht_decke_slider
             height: 20
-            width: 300
-            x: 20
-            y: 170
+            width: 480
+            x: 215
+            y: 63
             min_value: 0
             max_value: 100
             value: 50
@@ -1474,61 +1865,86 @@ lvgl:
                   data_template:
                     brightness_pct: "{{ new_brightness }}"
 
-        # ==========================================================
-        # Dusche (nur dimmbar)
-        # ==========================================================
-        - label:
-            id: w_licht_dusche_label
-            border_side: none
-            height: 26
-            radius: 0
-            text: "Dusche"
-            text_color: "0xAAAAAA"
-            text_font: font_roboto_400_20
-            width: 150
-            x: 20
-            y: 210
-
         - button:
-            id: w_licht_dusche_toggle
-            checkable: true
-            height: 40
-            width: 150
-            x: 20
-            y: 240
+            id: w_licht_decke_settings
+            hidden: true
+            height: 36
+            width: 40
+            x: 700
+            y: 55
+            bg_color: "0x2a2f38"
             on_click:
-              - homeassistant.action:
-                  action: homeassistant.toggle
-                  data:
-                    entity_id: ${entity_licht_dusche}
-            state:
-              checked: !lambda return id(licht_dusche_state).state == "on";
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_licht_decke_settings
             widgets:
-              -
-                label:
+              - label:
                   align: center
-                  text: "Ein/Aus"
+                  text: "RGB"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
         - label:
-            id: w_licht_dusche_helligkeit_label
+            id: w_licht_dusche_label
             border_side: none
-            height: 20
+            height: 36
             radius: 0
-            text: "Helligkeit"
+            text: "Dusche"
             text_color: "0xAAAAAA"
             text_font: font_roboto_400_14
-            width: 150
-            x: 20
-            y: 295
+            width: 90
+            x: 10
+            y: 101
+
+        - buttonmatrix:
+            id: w_licht_dusche_matrix
+            x: 105
+            y: 101
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_dusche_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_dusche}
+                  - id: w_licht_dusche_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_dusche}
 
         - slider:
             id: w_licht_dusche_slider
             height: 20
-            width: 300
-            x: 20
-            y: 320
+            width: 480
+            x: 215
+            y: 109
             min_value: 0
             max_value: 100
             value: 50
@@ -1542,61 +1958,86 @@ lvgl:
                   data_template:
                     brightness_pct: "{{ new_brightness }}"
 
-        # ==========================================================
-        # Bett Groß (nur dimmbar)
-        # ==========================================================
-        - label:
-            id: w_licht_bett_label
-            border_side: none
-            height: 26
-            radius: 0
-            text: "Bett Groß"
-            text_color: "0xAAAAAA"
-            text_font: font_roboto_400_20
-            width: 150
-            x: 450
-            y: 60
-
         - button:
-            id: w_licht_bett_toggle
-            checkable: true
-            height: 40
-            width: 150
-            x: 450
-            y: 90
+            id: w_licht_dusche_settings
+            hidden: true
+            height: 36
+            width: 40
+            x: 700
+            y: 101
+            bg_color: "0x2a2f38"
             on_click:
-              - homeassistant.action:
-                  action: homeassistant.toggle
-                  data:
-                    entity_id: ${entity_licht_bett_gross}
-            state:
-              checked: !lambda return id(licht_bett_state).state == "on";
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_licht_dusche_settings
             widgets:
-              -
-                label:
+              - label:
                   align: center
-                  text: "Ein/Aus"
+                  text: "RGB"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
         - label:
-            id: w_licht_bett_helligkeit_label
+            id: w_licht_bett_label
             border_side: none
-            height: 20
+            height: 36
             radius: 0
-            text: "Helligkeit"
+            text: "Bett"
             text_color: "0xAAAAAA"
             text_font: font_roboto_400_14
-            width: 150
-            x: 450
-            y: 145
+            width: 90
+            x: 10
+            y: 147
+
+        - buttonmatrix:
+            id: w_licht_bett_matrix
+            x: 105
+            y: 147
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_bett_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_bett_gross}
+                  - id: w_licht_bett_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_bett_gross}
 
         - slider:
             id: w_licht_bett_slider
             height: 20
-            width: 300
-            x: 450
-            y: 170
+            width: 480
+            x: 215
+            y: 155
             min_value: 0
             max_value: 100
             value: 50
@@ -1610,61 +2051,86 @@ lvgl:
                   data_template:
                     brightness_pct: "{{ new_brightness }}"
 
-        # ==========================================================
-        # Markise (nur dimmbar)
-        # ==========================================================
-        - label:
-            id: w_licht_markise_label
-            border_side: none
-            height: 26
-            radius: 0
-            text: "Markise"
-            text_color: "0xAAAAAA"
-            text_font: font_roboto_400_20
-            width: 150
-            x: 450
-            y: 225
-
         - button:
-            id: w_licht_markise_toggle
-            checkable: true
-            height: 40
-            width: 150
-            x: 450
-            y: 255
+            id: w_licht_bett_settings
+            hidden: true
+            height: 36
+            width: 40
+            x: 700
+            y: 147
+            bg_color: "0x2a2f38"
             on_click:
-              - homeassistant.action:
-                  action: homeassistant.toggle
-                  data:
-                    entity_id: ${entity_licht_markise}
-            state:
-              checked: !lambda return id(licht_markise_state).state == "on";
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_licht_bett_settings
             widgets:
-              -
-                label:
+              - label:
                   align: center
-                  text: "Ein/Aus"
+                  text: "RGB"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
         - label:
-            id: w_licht_markise_helligkeit_label
+            id: w_licht_markise_label
             border_side: none
-            height: 20
+            height: 36
             radius: 0
-            text: "Helligkeit"
+            text: "Markise"
             text_color: "0xAAAAAA"
             text_font: font_roboto_400_14
-            width: 150
-            x: 450
-            y: 310
+            width: 90
+            x: 10
+            y: 193
+
+        - buttonmatrix:
+            id: w_licht_markise_matrix
+            x: 105
+            y: 193
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_markise_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_markise}
+                  - id: w_licht_markise_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_markise}
 
         - slider:
             id: w_licht_markise_slider
             height: 20
-            width: 300
-            x: 450
-            y: 335
+            width: 480
+            x: 215
+            y: 201
             min_value: 0
             max_value: 100
             value: 50
@@ -1673,6 +2139,342 @@ lvgl:
                   action: light.turn_on
                   data:
                     entity_id: ${entity_licht_markise}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        - button:
+            id: w_licht_markise_settings
+            hidden: true
+            height: 36
+            width: 40
+            x: 700
+            y: 193
+            bg_color: "0x2a2f38"
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_licht_markise_settings
+            widgets:
+              - label:
+                  align: center
+                  text: "RGB"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - label:
+            id: w_licht_wiz_label
+            border_side: none
+            height: 36
+            radius: 0
+            text: "WiZ"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 90
+            x: 10
+            y: 239
+
+        - buttonmatrix:
+            id: w_licht_wiz_matrix
+            x: 105
+            y: 239
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_wiz_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_wiz}
+                  - id: w_licht_wiz_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_wiz}
+
+        - slider:
+            id: w_licht_wiz_slider
+            height: 20
+            width: 480
+            x: 215
+            y: 247
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_wiz}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        - button:
+            id: w_licht_wiz_settings
+            hidden: true
+            height: 36
+            width: 40
+            x: 700
+            y: 239
+            bg_color: "0x2a2f38"
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_licht_wiz_settings
+            widgets:
+              - label:
+                  align: center
+                  text: "RGB"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+        - label:
+            id: w_licht_licht6_label
+            border_side: none
+            height: 36
+            radius: 0
+            text: "Licht 6"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 90
+            x: 10
+            y: 285
+
+        - buttonmatrix:
+            id: w_licht_licht6_matrix
+            x: 105
+            y: 285
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_licht6_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_6}
+                  - id: w_licht_licht6_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_6}
+
+        - slider:
+            id: w_licht_licht6_slider
+            height: 20
+            width: 480
+            x: 215
+            y: 293
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_6}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        - label:
+            id: w_licht_licht7_label
+            border_side: none
+            height: 36
+            radius: 0
+            text: "Licht 7"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 90
+            x: 10
+            y: 331
+
+        - buttonmatrix:
+            id: w_licht_licht7_matrix
+            x: 105
+            y: 331
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_licht7_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_7}
+                  - id: w_licht_licht7_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_7}
+
+        - slider:
+            id: w_licht_licht7_slider
+            height: 20
+            width: 480
+            x: 215
+            y: 339
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_7}
+                  variables:
+                    new_brightness: !lambda 'return (int) x;'
+                  data_template:
+                    brightness_pct: "{{ new_brightness }}"
+
+        - label:
+            id: w_licht_licht8_label
+            border_side: none
+            height: 36
+            radius: 0
+            text: "Licht 8"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 90
+            x: 10
+            y: 377
+
+        - buttonmatrix:
+            id: w_licht_licht8_matrix
+            x: 105
+            y: 377
+            width: 100
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - id: w_licht_licht8_off
+                    text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_off
+                                  data:
+                                    entity_id: ${entity_licht_8}
+                  - id: w_licht_licht8_on
+                    text: "An"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_8}
+
+        - slider:
+            id: w_licht_licht8_slider
+            height: 20
+            width: 480
+            x: 215
+            y: 385
+            min_value: 0
+            max_value: 100
+            value: 50
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_8}
                   variables:
                     new_brightness: !lambda 'return (int) x;'
                   data_template:
@@ -1689,51 +2491,1227 @@ lvgl:
               - lambda: 'id(display_page) = 0;'
               - lvgl.page.show: page_0
             widgets:
-              -
-                label:
+              - label:
                   align: center
-                  text: "Zurück"
+                  text: "Zurueck"
                   text_color: "0xFFFFFF"
                   text_font: font_roboto_400_14
 
-    # ============================================================
-    # Bildschirmschoner: großes Logo, erscheint nach Inaktivität
-    # ============================================================
+    - id: page_licht_wiz_settings
+      widgets:
+        - label:
+            border_side: none
+            height: 30
+            radius: 0
+            text: "WiZ - Sondereinstellungen"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 400
+            x: 20
+            y: 15
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Rot"
+            text_color: "0xFF6666"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 60
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 82
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_wiz}
+                  variables:
+                    new_r: !lambda 'id(wiz_r) = (int) x; return id(wiz_r);'
+                    cur_g: !lambda 'return id(wiz_g);'
+                    cur_b: !lambda 'return id(wiz_b);'
+                    cur_w: !lambda 'return id(wiz_w);'
+                  data_template:
+                    rgbw_color: "[{{ new_r }}, {{ cur_g }}, {{ cur_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Gruen"
+            text_color: "0x66FF66"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 116
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 138
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_wiz}
+                  variables:
+                    cur_r: !lambda 'return id(wiz_r);'
+                    new_g: !lambda 'id(wiz_g) = (int) x; return id(wiz_g);'
+                    cur_b: !lambda 'return id(wiz_b);'
+                    cur_w: !lambda 'return id(wiz_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ new_g }}, {{ cur_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Blau"
+            text_color: "0x6666FF"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 172
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 194
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_wiz}
+                  variables:
+                    cur_r: !lambda 'return id(wiz_r);'
+                    cur_g: !lambda 'return id(wiz_g);'
+                    new_b: !lambda 'id(wiz_b) = (int) x; return id(wiz_b);'
+                    cur_w: !lambda 'return id(wiz_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ cur_g }}, {{ new_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Weiss"
+            text_color: "0xFFDD99"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 228
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 250
+            min_value: 0
+            max_value: 255
+            value: 0
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_wiz}
+                  variables:
+                    cur_r: !lambda 'return id(wiz_r);'
+                    cur_g: !lambda 'return id(wiz_g);'
+                    cur_b: !lambda 'return id(wiz_b);'
+                    new_w: !lambda 'id(wiz_w) = (int) x; return id(wiz_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ cur_g }}, {{ cur_b }}, {{ new_w }}]"
+
+        - label:
+            border_side: none
+            height: 16
+            radius: 0
+            text: "Hinweis: Falls die Lampe eine einstellbare Farbtemperatur"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 400
+            x: 20
+            y: 290
+
+        - label:
+            border_side: none
+            height: 16
+            radius: 0
+            text: "statt eines festen Weiss-Kanals hat, sag Bescheid fuer einen"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 400
+            x: 20
+            y: 308
+
+        - label:
+            border_side: none
+            height: 16
+            radius: 0
+            text: "Kelvin-Regler statt dieses Schiebereglers."
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 400
+            x: 20
+            y: 326
+
+        - button:
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_4
+            widgets:
+              - label:
+                  align: center
+                  text: "Zurueck"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+    - id: page_licht_decke_settings
+      widgets:
+        - label:
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Decke - Sondereinstellungen"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 400
+            x: 20
+            y: 15
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Rot"
+            text_color: "0xFF6666"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 60
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 82
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_decke}
+                  variables:
+                    new_r: !lambda 'id(decke_r) = (int) x; return id(decke_r);'
+                    cur_g: !lambda 'return id(decke_g);'
+                    cur_b: !lambda 'return id(decke_b);'
+                    cur_w: !lambda 'return id(decke_w);'
+                  data_template:
+                    rgbw_color: "[{{ new_r }}, {{ cur_g }}, {{ cur_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Gruen"
+            text_color: "0x66FF66"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 116
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 138
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_decke}
+                  variables:
+                    cur_r: !lambda 'return id(decke_r);'
+                    new_g: !lambda 'id(decke_g) = (int) x; return id(decke_g);'
+                    cur_b: !lambda 'return id(decke_b);'
+                    cur_w: !lambda 'return id(decke_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ new_g }}, {{ cur_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Blau"
+            text_color: "0x6666FF"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 172
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 194
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_decke}
+                  variables:
+                    cur_r: !lambda 'return id(decke_r);'
+                    cur_g: !lambda 'return id(decke_g);'
+                    new_b: !lambda 'id(decke_b) = (int) x; return id(decke_b);'
+                    cur_w: !lambda 'return id(decke_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ cur_g }}, {{ new_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Warmweiss"
+            text_color: "0xFFDD99"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 228
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 250
+            min_value: 0
+            max_value: 255
+            value: 0
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_decke}
+                  variables:
+                    cur_r: !lambda 'return id(decke_r);'
+                    cur_g: !lambda 'return id(decke_g);'
+                    cur_b: !lambda 'return id(decke_b);'
+                    new_w: !lambda 'id(decke_w) = (int) x; return id(decke_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ cur_g }}, {{ cur_b }}, {{ new_w }}]"
+
+        - label:
+            border_side: none
+            height: 16
+            radius: 0
+            text: "Effekt:"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 20
+            y: 288
+
+        - buttonmatrix:
+            x: 20
+            y: 308
+            width: 400
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_decke}
+                                    effect: "None"
+                  - text: "Random"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_decke}
+                                    effect: "Random Effect"
+                  - text: "Langsam"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_decke}
+                                    effect: "Random Effect langsam"
+                  - text: "Schnell"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_decke}
+                                    effect: "Random Effect schnell"
+
+        - button:
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_4
+            widgets:
+              - label:
+                  align: center
+                  text: "Zurueck"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+    - id: page_licht_dusche_settings
+      widgets:
+        - label:
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Dusche - Sondereinstellungen"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 400
+            x: 20
+            y: 15
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Rot"
+            text_color: "0xFF6666"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 70
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 95
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_dusche}
+                  variables:
+                    new_r: !lambda 'id(dusche_r) = (int) x; return id(dusche_r);'
+                    cur_g: !lambda 'return id(dusche_g);'
+                    cur_b: !lambda 'return id(dusche_b);'
+                  data_template:
+                    rgb_color: "[{{ new_r }}, {{ cur_g }}, {{ cur_b }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Gruen"
+            text_color: "0x66FF66"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 140
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 165
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_dusche}
+                  variables:
+                    cur_r: !lambda 'return id(dusche_r);'
+                    new_g: !lambda 'id(dusche_g) = (int) x; return id(dusche_g);'
+                    cur_b: !lambda 'return id(dusche_b);'
+                  data_template:
+                    rgb_color: "[{{ cur_r }}, {{ new_g }}, {{ cur_b }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Blau"
+            text_color: "0x6666FF"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 210
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 235
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_dusche}
+                  variables:
+                    cur_r: !lambda 'return id(dusche_r);'
+                    cur_g: !lambda 'return id(dusche_g);'
+                    new_b: !lambda 'id(dusche_b) = (int) x; return id(dusche_b);'
+                  data_template:
+                    rgb_color: "[{{ cur_r }}, {{ cur_g }}, {{ new_b }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Falls die Lampe kein RGB unterstuetzt, wird dies ignoriert."
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 400
+            x: 20
+            y: 280
+
+        - button:
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_4
+            widgets:
+              - label:
+                  align: center
+                  text: "Zurueck"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+    - id: page_licht_bett_settings
+      widgets:
+        - label:
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Bett Gross - Sondereinstellungen"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 400
+            x: 20
+            y: 15
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Rot"
+            text_color: "0xFF6666"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 70
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 95
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_bett_gross}
+                  variables:
+                    new_r: !lambda 'id(bett_r) = (int) x; return id(bett_r);'
+                    cur_g: !lambda 'return id(bett_g);'
+                    cur_b: !lambda 'return id(bett_b);'
+                  data_template:
+                    rgb_color: "[{{ new_r }}, {{ cur_g }}, {{ cur_b }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Gruen"
+            text_color: "0x66FF66"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 140
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 165
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_bett_gross}
+                  variables:
+                    cur_r: !lambda 'return id(bett_r);'
+                    new_g: !lambda 'id(bett_g) = (int) x; return id(bett_g);'
+                    cur_b: !lambda 'return id(bett_b);'
+                  data_template:
+                    rgb_color: "[{{ cur_r }}, {{ new_g }}, {{ cur_b }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Blau"
+            text_color: "0x6666FF"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 210
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 235
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_bett_gross}
+                  variables:
+                    cur_r: !lambda 'return id(bett_r);'
+                    cur_g: !lambda 'return id(bett_g);'
+                    new_b: !lambda 'id(bett_b) = (int) x; return id(bett_b);'
+                  data_template:
+                    rgb_color: "[{{ cur_r }}, {{ cur_g }}, {{ new_b }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Falls die Lampe kein RGB unterstuetzt, wird dies ignoriert."
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 400
+            x: 20
+            y: 280
+
+        - button:
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_4
+            widgets:
+              - label:
+                  align: center
+                  text: "Zurueck"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
+    - id: page_licht_markise_settings
+      widgets:
+        - label:
+            border_side: none
+            height: 30
+            radius: 0
+            text: "Markise - Sondereinstellungen"
+            text_color: "0xFFFFFF"
+            text_font: font_roboto_400_20
+            width: 400
+            x: 20
+            y: 15
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Rot"
+            text_color: "0xFF6666"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 60
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 82
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_markise}
+                  variables:
+                    new_r: !lambda 'id(markise_r) = (int) x; return id(markise_r);'
+                    cur_g: !lambda 'return id(markise_g);'
+                    cur_b: !lambda 'return id(markise_b);'
+                    cur_w: !lambda 'return id(markise_w);'
+                  data_template:
+                    rgbw_color: "[{{ new_r }}, {{ cur_g }}, {{ cur_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Gruen"
+            text_color: "0x66FF66"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 116
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 138
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_markise}
+                  variables:
+                    cur_r: !lambda 'return id(markise_r);'
+                    new_g: !lambda 'id(markise_g) = (int) x; return id(markise_g);'
+                    cur_b: !lambda 'return id(markise_b);'
+                    cur_w: !lambda 'return id(markise_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ new_g }}, {{ cur_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Blau"
+            text_color: "0x6666FF"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 172
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 194
+            min_value: 0
+            max_value: 255
+            value: 255
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_markise}
+                  variables:
+                    cur_r: !lambda 'return id(markise_r);'
+                    cur_g: !lambda 'return id(markise_g);'
+                    new_b: !lambda 'id(markise_b) = (int) x; return id(markise_b);'
+                    cur_w: !lambda 'return id(markise_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ cur_g }}, {{ new_b }}, {{ cur_w }}]"
+
+        - label:
+            border_side: none
+            height: 20
+            radius: 0
+            text: "Warmweiss"
+            text_color: "0xFFDD99"
+            text_font: font_roboto_400_14
+            width: 100
+            x: 20
+            y: 228
+
+        - slider:
+            height: 20
+            width: 400
+            x: 20
+            y: 250
+            min_value: 0
+            max_value: 255
+            value: 0
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${entity_licht_markise}
+                  variables:
+                    cur_r: !lambda 'return id(markise_r);'
+                    cur_g: !lambda 'return id(markise_g);'
+                    cur_b: !lambda 'return id(markise_b);'
+                    new_w: !lambda 'id(markise_w) = (int) x; return id(markise_w);'
+                  data_template:
+                    rgbw_color: "[{{ cur_r }}, {{ cur_g }}, {{ cur_b }}, {{ new_w }}]"
+
+        - label:
+            border_side: none
+            height: 16
+            radius: 0
+            text: "Effekt:"
+            text_color: "0xAAAAAA"
+            text_font: font_roboto_400_14
+            width: 200
+            x: 20
+            y: 288
+
+        - buttonmatrix:
+            x: 20
+            y: 308
+            width: 400
+            height: 36
+            one_checked: true
+            bg_opa: transp
+            border_width: 0
+            outline_width: 0
+            pad_all: 0
+            items:
+              bg_color: "0xC0392B"
+              checked:
+                bg_color: "0x27AE60"
+            rows:
+              - buttons:
+                  - text: "Aus"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_markise}
+                                    effect: "None"
+                  - text: "Random"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_markise}
+                                    effect: "Random Effect"
+                  - text: "Langsam"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_markise}
+                                    effect: "Random Effect langsam"
+                  - text: "Schnell"
+                    control: {checkable: true}
+                    on_value:
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return x;'
+                            then:
+                              - homeassistant.action:
+                                  action: light.turn_on
+                                  data:
+                                    entity_id: ${entity_licht_markise}
+                                    effect: "Random Effect schnell"
+
+        - button:
+            height: 40
+            width: 120
+            x: 20
+            y: 430
+            on_click:
+              - lambda: 'id(display_page) = 4;'
+              - lvgl.page.show: page_4
+            widgets:
+              - label:
+                  align: center
+                  text: "Zurueck"
+                  text_color: "0xFFFFFF"
+                  text_font: font_roboto_400_14
+
     - id: page_screensaver
       widgets:
         - image:
             id: w_screensaver_logo
-            src: smart_womo_logo_2
+            src: smart_womo_logo
             align: CENTER
             x: 0
             y: 0
             image_opa: 100%
 
-binary_sensor:
-  # --- Truma Status ---
-  - platform: homeassistant
-    id: truma_heater_error
-    entity_id: ${entity_truma_fehler}
-    internal: true
+# ============================================================
+# Truma: lokale Entities (direkt vom truma_inetbox auf diesem
+# selben ESP32, unabhängig vom HA-Roundtrip oben im LVGL-Teil)
+# Diese Entities werden zusätzlich über api: an Home Assistant
+# gemeldet. Die bestehenden LVGL-Bindings weiter oben nutzen
+# weiterhin die "homeassistant:"-Platform-Entities (truma_*) -
+# die sind unverändert und funktionieren weiter wie bisher.
+# ============================================================
+
+climate:
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_truma_aircon
+    name: "Aircon"
+    type: AIRCON
+    # Kein Heizbetrieb verfügbar (keine Heizung/kein Wärmepumpen-Aventa)
+    supported_modes:
+      - "OFF"
+      - "COOL"
+      - "FAN_ONLY"
     on_state:
+      - lvgl.label.update:
+          id: w_aircon_temp_value
+          text: !lambda |-
+            float t = id(local_truma_aircon).current_temperature;
+            if (std::isnan(t)) return std::string("Aktuell: -- °C");
+            return str_sprintf("Aktuell: %.1f °C", t);
+      - lvgl.arc.update:
+          id: w_aircon_target_arc
+          value: !lambda |-
+            float t = id(local_truma_aircon).target_temperature;
+            if (std::isnan(t)) return 16;
+            return (int) t;
+      - lvgl.label.update:
+          id: w_aircon_target_arc_value
+          text: !lambda |-
+            float t = id(local_truma_aircon).target_temperature;
+            if (std::isnan(t)) return std::string("");
+            return str_sprintf("%.0f°", t);
+      - lvgl.matrix.button.update:
+          id: w_aircon_mode_off
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_aircon_mode_cool
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_aircon_mode_fan
+          control:
+            checked: false
       - if:
           condition:
-            lambda: return x;
+            lambda: 'return id(local_truma_aircon).mode == climate::CLIMATE_MODE_OFF;'
           then:
-            - lvgl.label.update:
-                id: w_truma_error_label
-                text: "FEHLER!"
-                text_color: "0xFF0000"
-          else:
-            - lvgl.label.update:
-                id: w_truma_error_label
-                text: "Kein Fehler"
-                text_color: "0x00FF00"
+            - lvgl.matrix.button.update:
+                id: w_aircon_mode_off
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(local_truma_aircon).mode == climate::CLIMATE_MODE_COOL;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_aircon_mode_cool
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(local_truma_aircon).mode == climate::CLIMATE_MODE_FAN_ONLY;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_aircon_mode_fan
+                control:
+                  checked: true
 
-  - platform: homeassistant
-    id: truma_cp_plus_online
-    entity_id: ${entity_truma_verbunden}
-    internal: true
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_truma_room
+    name: "Room"
+    type: ROOM
+    on_state:
+      - lvgl.label.update:
+          id: w_room_temp_value
+          text: !lambda |-
+            float t = id(local_truma_room).current_temperature;
+            if (std::isnan(t)) return std::string("Aktuell: -- °C");
+            return str_sprintf("Aktuell: %.1f °C", t);
+      - lvgl.arc.update:
+          id: w_room_target_arc
+          value: !lambda |-
+            float t = id(local_truma_room).target_temperature;
+            if (std::isnan(t)) return 5;
+            return (int) t;
+      - lvgl.label.update:
+          id: w_room_target_arc_value
+          text: !lambda |-
+            float t = id(local_truma_room).target_temperature;
+            if (std::isnan(t)) return std::string("");
+            return str_sprintf("%.0f°", t);
+      - lvgl.matrix.button.update:
+          id: w_room_mode_off
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_room_mode_heat
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return id(local_truma_room).mode == climate::CLIMATE_MODE_OFF;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_room_mode_off
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(local_truma_room).mode == climate::CLIMATE_MODE_HEAT;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_room_mode_heat
+                control:
+                  checked: true
+
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_truma_water
+    name: "Water"
+    type: WATER
+    on_state:
+      - lvgl.label.update:
+          id: w_water_temp_value
+          text: !lambda |-
+            float t = id(local_truma_water).current_temperature;
+            if (std::isnan(t)) return std::string("Aktuell: -- °C");
+            return str_sprintf("Aktuell: %.1f °C", t);
+      - lvgl.matrix.button.update:
+          id: w_water_target_off
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_water_target_40
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_water_target_60
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_water_target_80
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return id(local_truma_water).mode == climate::CLIMATE_MODE_OFF;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_water_target_off
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(local_truma_water).mode == climate::CLIMATE_MODE_HEAT && fabs(id(local_truma_water).target_temperature - 40) < 0.5;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_water_target_40
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(local_truma_water).mode == climate::CLIMATE_MODE_HEAT && fabs(id(local_truma_water).target_temperature - 60) < 0.5;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_water_target_60
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(local_truma_water).mode == climate::CLIMATE_MODE_HEAT && fabs(id(local_truma_water).target_temperature - 80) < 0.5;'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_water_target_80
+                control:
+                  checked: true
+
+number:
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Aircon Temperature"
+    type: AIRCON_MANUAL_TEMPERATURE
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_heating_temp
+    name: "Target Room Temperature"
+    type: TARGET_ROOM_TEMPERATURE
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Target Water Temperature"
+    type: TARGET_WATER_TEMPERATURE
+
+select:
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Aircon Mode"
+    type: AIRCON_MODE
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_truma_aircon_vent
+    name: "Aircon Vent"
+    type: AIRCON_VENT_MODE
+    on_value:
+      - lambda: 'id(aircon_vent_state) = x;'
+      - lvgl.matrix.button.update:
+          id: w_aircon_vent_low
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_aircon_vent_mid
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_aircon_vent_high
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return id(aircon_vent_state) == "Low";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_aircon_vent_low
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(aircon_vent_state) == "Mid";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_aircon_vent_mid
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(aircon_vent_state) == "High";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_aircon_vent_high
+                control:
+                  checked: true
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_truma_fan_mode
+    name: "Fan Mode"
+    type: HEATER_FAN_MODE_COMBI
+    on_value:
+      - lambda: 'id(fan_mode_state) = x;'
+      - lvgl.matrix.button.update:
+          id: w_room_fan_eco
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_room_fan_boost
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return id(fan_mode_state) == "ECO";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_room_fan_eco
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return id(fan_mode_state) == "BOOST";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_room_fan_boost
+                control:
+                  checked: true
 
 sensor:
   - platform: homeassistant
@@ -1780,17 +3758,6 @@ sensor:
             args: ["x"]
 
   - platform: homeassistant
-    id: truma_current_water_temp
-    entity_id: ${entity_truma_wassertemperatur_aktuell}
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: w_water_temp_value
-          text:
-            format: "%.1f °C"
-            args: ["x"]
-
-  - platform: homeassistant
     id: truma_target_room_temp
     entity_id: ${entity_truma_raumtemperatur_soll_sensor}
     internal: true
@@ -1809,16 +3776,6 @@ sensor:
           text:
             format: "%.0f°"
             args: ["x"]
-
-  - platform: homeassistant
-    id: truma_target_water_temp_current
-    entity_id: ${entity_truma_wassertemperatur_soll}
-    internal: true
-    on_value:
-      - lvgl.widget.refresh: w_water_target_off
-      - lvgl.widget.refresh: w_water_target_40
-      - lvgl.widget.refresh: w_water_target_60
-      - lvgl.widget.refresh: w_water_target_80
 
   # --- Position / Wasserwaage ---
   - platform: homeassistant
@@ -2013,7 +3970,182 @@ sensor:
           id: w_licht_markise_slider
           value: !lambda 'return (int) (x / 255.0 * 100.0);'
 
+  - platform: homeassistant
+    id: licht_wiz_brightness
+    entity_id: ${entity_licht_wiz}
+    attribute: brightness
+    internal: true
+    on_value:
+      - lvgl.slider.update:
+          id: w_licht_wiz_slider
+          value: !lambda 'return (int) (x / 255.0 * 100.0);'
+
+  # --- Truma: lokal vom truma_inetbox auf diesem ESP32 ---
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_room_temp
+    name: "Current Room Temperature"
+    type: CURRENT_ROOM_TEMPERATURE
+    on_value:
+      - lvgl.label.update:
+          id: w_room_temp_value
+          text:
+            format: "Aktuell: %.1f °C"
+            args: ["x"]
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: local_water_temp
+    name: "Current Water Temperature"
+    type: CURRENT_WATER_TEMPERATURE
+    on_value:
+      - lvgl.label.update:
+          id: w_water_temp_value
+          text:
+            format: "Aktuell: %.1f °C"
+            args: ["x"]
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Target Room Temperature Status"
+    type: TARGET_ROOM_TEMPERATURE
+    on_value:
+      - lvgl.arc.update:
+          id: w_room_target_arc
+          value: !lambda 'return (int) x;'
+      - lvgl.label.update:
+          id: w_room_target_arc_value
+          text:
+            format: "%.0f°"
+            args: ["x"]
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Target Water Temperature Status"
+    type: TARGET_WATER_TEMPERATURE
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Heater Error Code"
+    type: HEATER_ERROR_CODE
+    on_value:
+      - lvgl.label.update:
+          id: w_truma_error_code_label
+          text:
+            format: "Code: %.0f"
+            args: ["x"]
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Heating Mode"
+    type: HEATING_MODE
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Operating Status"
+    type: OPERATING_STATUS
+
+binary_sensor:
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "CP Plus Connected"
+    type: CP_PLUS_CONNECTED
+    entity_category: diagnostic
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    id: truma_heater_error
+    name: "Heater Has Error"
+    type: HEATER_HAS_ERROR
+    on_state:
+      - if:
+          condition:
+            lambda: return x;
+          then:
+            - lvgl.label.update:
+                id: w_truma_error_label
+                text: "FEHLER!"
+                text_color: "0xFF0000"
+          else:
+            - lvgl.label.update:
+                id: w_truma_error_label
+                text: "Kein Fehler"
+                text_color: "0x00FF00"
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Room Heater Active"
+    type: HEATER_ROOM
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Water Heater Active"
+    type: HEATER_WATER
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Timer Active"
+    type: TIMER_ACTIVE
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Timer Room Heater Active"
+    type: TIMER_ROOM
+  - platform: truma_inetbox
+    truma_inetbox_id: truma_inetbox_id
+    name: "Timer Water Heater Active"
+    type: TIMER_WATER
+
 text_sensor:
+  - platform: truma_inetbox
+    name: "ESPHome Truma Version"
+
+  # --- Automatische Erkennung: Kann die Lampe RGB? Button ein-/ausblenden ---
+  - platform: homeassistant
+    id: licht_decke_color_modes
+    entity_id: ${entity_licht_decke}
+    attribute: supported_color_modes
+    internal: true
+    on_value:
+      - lvgl.widget.update:
+          id: w_licht_decke_settings
+          hidden: !lambda |-
+            std::string modes = x;
+            return !(modes.find("rgb") != std::string::npos ||
+                     modes.find("hs") != std::string::npos ||
+                     modes.find("xy") != std::string::npos);
+
+  - platform: homeassistant
+    id: licht_bett_color_modes
+    entity_id: ${entity_licht_bett_gross}
+    attribute: supported_color_modes
+    internal: true
+    on_value:
+      - lvgl.widget.update:
+          id: w_licht_bett_settings
+          hidden: !lambda |-
+            std::string modes = x;
+            return !(modes.find("rgb") != std::string::npos ||
+                     modes.find("hs") != std::string::npos ||
+                     modes.find("xy") != std::string::npos);
+
+  - platform: homeassistant
+    id: licht_dusche_color_modes
+    entity_id: ${entity_licht_dusche}
+    attribute: supported_color_modes
+    internal: true
+    on_value:
+      - lvgl.widget.update:
+          id: w_licht_dusche_settings
+          hidden: !lambda |-
+            std::string modes = x;
+            return !(modes.find("rgb") != std::string::npos ||
+                     modes.find("hs") != std::string::npos ||
+                     modes.find("xy") != std::string::npos);
+
+  - platform: homeassistant
+    id: licht_markise_color_modes
+    entity_id: ${entity_licht_markise}
+    attribute: supported_color_modes
+    internal: true
+    on_value:
+      - lvgl.widget.update:
+          id: w_licht_markise_settings
+          hidden: !lambda |-
+            std::string modes = x;
+            return !(modes.find("rgb") != std::string::npos ||
+                     modes.find("hs") != std::string::npos ||
+                     modes.find("xy") != std::string::npos);
+
   - platform: homeassistant
     id: heizung_hinten_mode
     entity_id: ${entity_heizung_hinten}
@@ -2027,28 +4159,164 @@ text_sensor:
     entity_id: ${entity_licht_decke}
     internal: true
     on_value:
-      - lvgl.widget.refresh: w_licht_decke_toggle
+      - lvgl.matrix.button.update:
+          id: w_licht_decke_on
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_licht_decke_off
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return x == "on";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_decke_on
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return x == "off";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_decke_off
+                control:
+                  checked: true
 
   - platform: homeassistant
     id: licht_bett_state
     entity_id: ${entity_licht_bett_gross}
     internal: true
     on_value:
-      - lvgl.widget.refresh: w_licht_bett_toggle
+      - lvgl.matrix.button.update:
+          id: w_licht_bett_on
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_licht_bett_off
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return x == "on";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_bett_on
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return x == "off";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_bett_off
+                control:
+                  checked: true
 
   - platform: homeassistant
     id: licht_dusche_state
     entity_id: ${entity_licht_dusche}
     internal: true
     on_value:
-      - lvgl.widget.refresh: w_licht_dusche_toggle
+      - lvgl.matrix.button.update:
+          id: w_licht_dusche_on
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_licht_dusche_off
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return x == "on";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_dusche_on
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return x == "off";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_dusche_off
+                control:
+                  checked: true
 
   - platform: homeassistant
     id: licht_markise_state
     entity_id: ${entity_licht_markise}
     internal: true
     on_value:
-      - lvgl.widget.refresh: w_licht_markise_toggle
+      - lvgl.matrix.button.update:
+          id: w_licht_markise_on
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_licht_markise_off
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return x == "on";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_markise_on
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return x == "off";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_markise_off
+                control:
+                  checked: true
+
+  - platform: homeassistant
+    id: licht_wiz_state
+    entity_id: ${entity_licht_wiz}
+    internal: true
+    on_value:
+      - lvgl.matrix.button.update:
+          id: w_licht_wiz_on
+          control:
+            checked: false
+      - lvgl.matrix.button.update:
+          id: w_licht_wiz_off
+          control:
+            checked: false
+      - if:
+          condition:
+            lambda: 'return x == "on";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_wiz_on
+                control:
+                  checked: true
+      - if:
+          condition:
+            lambda: 'return x == "off";'
+          then:
+            - lvgl.matrix.button.update:
+                id: w_licht_wiz_off
+                control:
+                  checked: true
+
+  - platform: homeassistant
+    id: licht_wiz_color_modes
+    entity_id: ${entity_licht_wiz}
+    attribute: supported_color_modes
+    internal: true
+    on_value:
+      - lvgl.widget.update:
+          id: w_licht_wiz_settings
+          hidden: !lambda |-
+            std::string modes = x;
+            return !(modes.find("rgb") != std::string::npos ||
+                     modes.find("hs") != std::string::npos ||
+                     modes.find("xy") != std::string::npos);
 
   - platform: homeassistant
     id: heizung_hinten_action
