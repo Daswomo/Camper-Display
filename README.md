@@ -1,113 +1,72 @@
 # Camper Display
 
-Ein ESPHome-basiertes LVGL-Dashboard für ein Waveshare 7" Touch-Display (ESP32-S3), das zentrale Fahrzeugdaten aus Home Assistant anzeigt und steuerbar macht – gedacht für den Einbau in Wohnmobil/Camper.
+Touchscreen-Steuerzentrale fürs Wohnmobil – Heizung, Klimaanlage, Licht und
+Fahrzeug-Sensoren auf einem Waveshare 7"-Touchdisplay (ESP32-S3), gebaut mit
+[ESPHome](https://esphome.io) und [Home Assistant](https://www.home-assistant.io).
 
-![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
-![ESPHome](https://img.shields.io/badge/ESPHome-2025.8.0%2B-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-lightgrey)
+Teil des **SmartWomoHA**-Projekts – *"Help for free"*.
 
-Ein Projekt von **SmartWomoHA** – *Help for free*.
+## Was das Display kann
 
-## Funktionen
+### 🌡️ Heizung & Klima
+- Truma Combi 6 Heizung: Ein/Aus, Solltemperatur per Drehregler, Heizstufe (ECO/BOOST)
+- Truma Aventa Klimaanlage: Aus/Kühlen/Nur Lüften, Lüfterstufe (Low/Mid/High)
+- Boiler: Aus/40°/60°/80°C auf Knopfdruck
+- Fehleranzeige mit Fehlercode direkt auf dem Display
+- Separate 230V-Zusatzheizung hinten mit eigenem Thermostat
 
-**Startseite**
-- Frischwasser- und Grauwasser-Füllstand sowie Batterieladung als Rundinstrumente mit Farbverlauf (Grün/Rot je nach Füllstand-Logik)
-- Navigation zu allen weiteren Seiten
+### 💡 Licht (8 Lampen steuerbar)
+- An/Aus + Helligkeit für jede Lampe
+- Bei RGB-fähigen Lampen: eigene Farbregler (Rot/Grün/Blau) + Warmweiß
+- Lichteffekte (z. B. "Random", "Langsam", "Schnell") direkt wählbar
+- Erkennt automatisch, welche Lampe überhaupt RGB kann, und blendet den Regler
+  sonst aus (basierend auf Home Assistants `supported_color_modes`-Attribut)
 
-**Truma-Heizung**
-- Großes Thermostat-Widget im Home-Assistant-Klimakarten-Stil (Drehrad zum Einstellen der Zieltemperatur)
-- Separate Boiler-Steuerung mit festen Temperaturstufen (Aus/40°/60°/80°)
-- Fehler- und Verbindungsstatus
-
-**Position**
-- Wasserwaage/Neigungsanzeige, nachgebaut nach dem Design der `realistic-bubble-level-card`
-- Reifendruck, -temperatur, -batteriestatus und individuelle Unterlege-Empfehlung (in cm) für alle vier Reifen, an den Fahrzeugecken angeordnet – mit Rad-Icon
-
-**Heizung Hinten**
-- Zweite Heizzone (Home-Assistant `climate`-Entity) mit eigenem Thermostat
-
-**Licht**
-- Ein/Aus- und Helligkeitssteuerung für vier Lampen
-
-**Bildschirmschoner**
-- Nach 5 Minuten Inaktivität wechselt das Display automatisch zu einer großen Logo-Ansicht (Backlight bleibt dauerhaft an)
-- Eine Berührung stellt automatisch die zuletzt aktive Seite wieder her
-
-**Allgemein**
-- Touch-Wakeup, seitenübergreifende Navigation
-- Alle Home-Assistant-Entity-IDs sowie Tankgrößen und Fahrzeugmaße zentral über `substitutions:` konfigurierbar – kein Durchsuchen der Datei nötig
+### 📊 Übersicht & Sensoren
+- Frischwasser-, Grauwasser- und Batteriestand als Rundinstrumente
+- Wasserwaage (Ausrichtung des Fahrzeugs) mit Blasenanzeige
+- An allen vier Ecken: Reifendruck, -temperatur und Achshöhe (zum Nivellieren)
 
 ## Hardware
 
-- Waveshare ESP32-S3-Touch-LCD-7 (800×480, RGB-Panel, GT911-Touch, CH422G-IO-Expander)
-- Home Assistant mit ESPHome-Add-on
-- Optional: TPMS-Reifendrucksensoren, die in Home Assistant als Entities vorliegen
+- Waveshare ESP32-S3-Touch-LCD-7 (800×480, GT911-Touch, LVGL)
+- 16 MB Flash
+- Truma-Heizung/Klima angebunden über CI-Bus (LIN) via
+  [`havanti/esphome-truma`](https://github.com/havanti/esphome-truma)
+  (Fork von `Fabian-Schmidt/esphome-truma_inetbox`)
 
-## Voraussetzungen
+## Setup
 
-- Home Assistant mit installiertem [ESPHome Add-on](https://esphome.io/)
-- Die auf dem Display angezeigten Home-Assistant-Entities existieren bereits in deiner Installation (siehe [Einrichtung](#einrichtung))
-
-## Einrichtung
-
-1. `camper-display.yaml` in dein ESPHome-Verzeichnis kopieren
-2. `secrets.yaml` um deine WLAN-Zugangsdaten ergänzen:
-   ```yaml
-   wifi_ssid: "Dein-WLAN"
-   wifi_password: "Dein-Passwort"
+1. Repo klonen
+2. `secrets.yaml.example` zu `secrets.yaml` kopieren und mit echten
+   Zugangsdaten befüllen (WLAN, API-Verschlüsselung, OTA-Passwort, ggf. MQTT)
+3. Eigene Bilddateien in `images/` legen (siehe `images/README.md`)
+4. Die `substitutions:` am Anfang von `camper-display.yaml` an deine eigenen
+   Home-Assistant-Entity-IDs anpassen (Lichter, Tanks, Reifendruck-Sensoren, etc.)
+5. Erstes Flashen per USB-Kabel:
    ```
-3. Dein Logo als `images/smart_womo_logo.png` sowie `images/wheel_icon.png` (transparenter Hintergrund empfohlen) im ESPHome-Verzeichnis ablegen, oder eigene Bilder verwenden und die Dateinamen im `image:`-Block anpassen
-4. Im Kopf der Datei den Abschnitt **`substitutions:`** an deine eigenen Home-Assistant-Entity-IDs anpassen – das ist der einzige Teil, den du normalerweise ändern musst. Enthält u. a.:
-   - Tank- und Batterie-Sensoren
-   - Truma-Heizung (Schalter, Sensoren, Zieltemperaturen)
-   - Neigungssensoren für die Wasserwaage
-   - TPMS-Reifensensoren (Druck, Temperatur, Batterie – je Rad)
-   - Zweite Heizzone (`climate`-Entity)
-   - Lichter (vier Lampen)
-   - Tankgrößen (Liter) und Fahrzeugmaße (Spurbreite/Radstand, für die Nivellierungs-Empfehlung)
-5. In ESPHome kompilieren und auf das Gerät flashen
+   esphome run camper-display.yaml
+   ```
+6. Alle weiteren Updates per OTA (WLAN), kein USB-Kabel mehr nötig:
+   ```
+   esphome upload camper-display.yaml
+   ```
 
-## Bekannte Einschränkungen
+## Sicherheitshinweis
 
-- **Kein ESPHome-Designer-Roundtrip**: Diese Datei enthält viel handgeschriebene LVGL-Logik (`on_click`, `on_value`, dynamische `!lambda`-Bindungen). Ein Export/Re-Import über den visuellen [ESPHome Designer](https://github.com/koosoli/ESPHomeDesigner) verwirft diese Anpassungen zuverlässig. Änderungen bitte direkt in der YAML vornehmen.
-- **Speicherbedarf beim Kompilieren**: Bei limitiertem RAM (z. B. Home Assistant auf einem Raspberry Pi) kann der Compile-Vorgang mit `Killed signal terminated program cc1plus` abbrechen. Abhilfe: im ESPHome-Add-on `compile_process_limit: 1` setzen, oder Swap-Speicher hinzufügen.
-- **Vorzeichen-Richtung der Reifen-Unterlege-Empfehlung** ist eine Annahme und muss am eigenen Fahrzeug verifiziert werden.
-- **Bilder aus Flash, nicht von SD-Karte**: Obwohl das Board einen Micro-SD-Slot besitzt, unterstützt ESPHome das direkte Laden von LVGL-Bildern von der SD-Karte aktuell nicht offiziell. Bilder werden zur Kompilierzeit in die Firmware eingebettet.
-- Getestet mit ESPHome ab Version 2025.8.0.
+`secrets.yaml` **niemals** committen (steht in `.gitignore`) – dort stehen dein
+WLAN-Passwort und die API-Verschlüsselung drin.
 
-## Tank-/Fahrzeugmaße anpassen
+## Bekannte Einschränkungen / offene Punkte
 
-Direkt im `substitutions:`-Block, kein Suchen im Layout-Code nötig:
+- Die drei letzten Lichter ("Licht 6/7/8") sind als Platzhalter vorbereitet –
+  Entity-IDs in `secrets.yaml`/`substitutions:` noch anzupassen, sobald die
+  echten Lampen feststehen
+- Bei der WiZ-Lampe wird aktuell ein fester Weiß-Kanal angenommen; falls sie
+  stattdessen eine einstellbare Farbtemperatur (Kelvin) hat, müsste der
+  entsprechende Regler noch angepasst werden
 
-```yaml
-tank_frischwasser_liter: "200"
-tank_grauwasser_liter: "100"
-fahrzeug_spurbreite_cm: "200"
-fahrzeug_radstand_cm: "400"
-```
+## Lizenz / Nutzung
 
-| Wert | Substitution | Standardwert |
-|---|---|---|
-| Frischwasser-Skala | `tank_frischwasser_liter` | 200 Liter |
-| Grauwasser-Skala | `tank_grauwasser_liter` | 100 Liter |
-| Batterie-Skala | – (fest 0–100 %) | 100 % |
-| Spurbreite | `fahrzeug_spurbreite_cm` | 200 cm |
-| Radstand | `fahrzeug_radstand_cm` | 400 cm |
-
-## Mitwirken
-
-Issues und Pull Requests sind willkommen. Bei strukturellen Änderungen bitte kurz beschreiben, welche Home-Assistant-Domain (z. B. `switch`, `climate`, `light`) betroffen ist, da sich die Steuerlogik je nach Domain unterscheidet.
-
-## Unterstützung
-
-Dieses Projekt ist und bleibt kostenlos – ganz im Sinne von **SmartWomoHA: Help for free**.
-
-Wenn es dir weitergeholfen hat und du dich erkenntlich zeigen möchtest, freue ich mich über eine kleine Spende:
-
-👉 **[PayPal: paypal.me/smartwomoha](https://paypal.me/smartwomoha)**
-
-Verpflichtend ist das natürlich nicht – jedes Feedback, jeder Stern auf GitHub und jeder gemeldete Fehler hilft dem Projekt genauso weiter.
-
-## Lizenz
-
-MIT – siehe [LICENSE](LICENSE)
+Frei nutzbar und veränderbar im Sinne von "Help for free" – bei Fragen gerne
+in der SmartWomoHA-Gruppe melden.
